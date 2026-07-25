@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+html = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -10,9 +10,9 @@
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
-            --bg: #0C1630;
-            --surface: rgba(255,255,255,0.05);
-            --border: rgba(255,255,255,0.09);
+            --bg: #080808;
+            --surface: rgba(255,255,255,0.04);
+            --border: rgba(255,255,255,0.08);
             --text: #f0f0f0;
             --muted: #6b7280;
             --accent: #7c6dfa;
@@ -25,18 +25,11 @@
             --mono: 'JetBrains Mono', monospace;
         }
         html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
-        /* AURORA BACKGROUND — handled by #bgCanvas */
-        #bgCanvas {
-            position: fixed; inset: 0; z-index: 0;
-            width: 100%; height: 100%;
-            pointer-events: none;
-        }
 
         /* NAV */
         .nav {
             position: fixed; top: 0; left: 0; right: 0; height: 64px;
-            display: grid; grid-template-columns: 1fr auto 1fr;
-            align-items: center;
+            display: flex; align-items: center; justify-content: space-between;
             padding: 0 2rem; z-index: 100;
             background: rgba(8,8,8,0.75); backdrop-filter: blur(24px);
             border-bottom: 1px solid var(--border);
@@ -55,26 +48,12 @@
             background: var(--surface); border: 1px solid var(--border);
             font-size: 0.8rem; font-weight: 500; color: var(--muted);
         }
-        .sync-badge {
-            display: flex; align-items: center; gap: 0.45rem;
-            padding: 0.38rem 0.85rem; border-radius: 99px;
-            background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3);
-            color: #4ade80; font-size: 0.78rem; font-weight: 600;
-            letter-spacing: -0.01em; box-shadow: 0 0 12px rgba(34,197,94,0.15);
-            cursor: pointer; transition: all 0.2s ease;
-        }
-        .sync-badge.unsynced {
-            background: rgba(234,179,8,0.12); border-color: rgba(234,179,8,0.3);
-            color: #facc15; box-shadow: none;
-        }
-        .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 8px #4ade80; flex-shrink: 0; }
-        .sync-badge.unsynced .sync-dot { background: #facc15; box-shadow: none; }
         .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
         .dot.live { background: var(--green); box-shadow: 0 0 10px var(--green-glow); animation: blink 1.6s infinite; }
         .dot.speaking { background: var(--accent); box-shadow: 0 0 10px var(--accent-glow); animation: blink 1.2s infinite; }
         .dot.muted { background: var(--red); }
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.35} }
-        .nav-right { display: flex; align-items: center; gap: 0.75rem; justify-content: flex-end; }
+        .nav-right { display: flex; align-items: center; gap: 0.75rem; }
         .nav-btn {
             display: flex; align-items: center; gap: 0.45rem;
             padding: 0.42rem 0.9rem; border-radius: 8px;
@@ -124,13 +103,13 @@
         }
         .p-btn:hover { background: rgba(255,255,255,0.08); }
         .p-btn.danger { color: var(--red); }
-        .p-btn.danger:hover { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.3); }
+        .p-btn.danger:hover { background: rgba(239,68,68,0.08); }
 
         /* STAGE */
         .stage {
             height: 100vh; display: flex; flex-direction: column;
             align-items: center; justify-content: center;
-            padding: 96px 2rem 2rem;
+            padding: 64px 2rem 80px; gap: 0;
         }
         .agent-label {
             font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
@@ -202,73 +181,44 @@
         }
         .call-icon { width: 18px; height: 18px; flex-shrink: 0; }
 
-        /* peek-btn hidden — replaced by nav Chat button */
-        .peek-btn { display: none !important; }
+        /* PEEK BUTTON */
+        .peek-btn {
+            position: fixed; bottom: 1.75rem; left: 50%; transform: translateX(-50%);
+            display: flex; align-items: center; gap: 0.5rem;
+            padding: 0.55rem 1.4rem; border-radius: 99px;
+            background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+            color: var(--muted); font-family: var(--font); font-size: 0.78rem;
+            font-weight: 500; cursor: pointer; transition: all 0.18s;
+            z-index: 50; backdrop-filter: blur(12px);
+            opacity: 0; animation: fadeUp 0.8s 1s ease forwards;
+        }
+        .peek-btn:hover { background: rgba(255,255,255,0.09); color: var(--text); border-color: rgba(255,255,255,0.16); }
         .peek-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
 
-        /* LIVE CAPTIONS */
-        .caption-wrap {
-            margin-top: 2rem;
-            width: min(640px, 88vw);
-            min-height: 64px;
-            display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
-            opacity: 0;
-            transition: opacity 0.5s ease;
-            pointer-events: none;
-        }
-        .caption-wrap.visible { opacity: 1; }
-        .caption-prev {
-            font-size: 1.05rem; font-weight: 400;
-            color: rgba(255,255,255,0.2);
-            text-align: center; line-height: 1.5;
-            max-width: 100%; word-wrap: break-word;
-            min-height: 1.5em;
-            transition: opacity 0.4s ease;
-        }
-        .caption-live {
-            display: flex; align-items: baseline; gap: 0.55rem;
-            text-align: center; justify-content: center;
-            flex-wrap: wrap;
-        }
-        .caption-who {
-            font-size: 0.72rem; font-weight: 700;
-            text-transform: uppercase; letter-spacing: 0.12em;
-            padding: 0.15rem 0.5rem; border-radius: 5px;
-            flex-shrink: 0;
-        }
-        .caption-who.user-who {
-            color: var(--accent); background: rgba(124,109,250,0.12);
-            border: 1px solid rgba(124,109,250,0.25);
-        }
-        .caption-who.ai-who {
-            color: #a3e635; background: rgba(163,230,53,0.08);
-            border: 1px solid rgba(163,230,53,0.2);
-        }
-        .caption-text {
-            font-size: 1.25rem; font-weight: 500;
-            color: #ffffff;
-            line-height: 1.45; word-wrap: break-word;
-            text-shadow: 0 0 24px rgba(255,255,255,0.15);
-            letter-spacing: -0.01em;
-        }
-
-        /* TRANSCRIPT RIGHT PANEL */
+        /* CHAT DRAWER */
         .drawer {
-            position: fixed; top: 64px; right: -400px; width: 370px;
-            height: calc(100vh - 64px);
-            background: rgba(9,9,11,0.96); backdrop-filter: blur(40px) saturate(160%);
-            border-left: 1px solid var(--border);
-            border-radius: 0;
+            position: fixed; bottom: -540px; left: 50%;
+            transform: translateX(-50%); width: min(740px, 94vw); height: 540px;
+            background: rgba(9,9,11,0.94); backdrop-filter: blur(40px) saturate(160%);
+            border: 1px solid var(--border); border-bottom: none;
+            border-radius: 24px 24px 0 0;
             display: flex; flex-direction: column;
-            z-index: 300; transition: right 0.5s cubic-bezier(0.16,1,0.3,1);
-            box-shadow: -12px 0 50px rgba(0,0,0,0.5);
+            z-index: 300; transition: bottom 0.5s cubic-bezier(0.16,1,0.3,1);
+            box-shadow: 0 -16px 60px rgba(0,0,0,0.5);
         }
-        .drawer.open { right: 0; }
-        /* Hide the old bottom drawer handle — not needed for side panel */
-        .drawer-handle-area { display: none; }
+        .drawer.open { bottom: 0; }
+        .drawer-handle-area {
+            height: 36px; display: flex; align-items: center;
+            justify-content: center; cursor: pointer; flex-shrink: 0;
+        }
+        .drawer-handle {
+            width: 40px; height: 4px; border-radius: 99px;
+            background: rgba(255,255,255,0.1); transition: width 0.2s, background 0.2s;
+        }
+        .drawer-handle-area:hover .drawer-handle { width: 60px; background: rgba(255,255,255,0.22); }
         .drawer-header {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 1.2rem 1.25rem 0.9rem; border-bottom: 1px solid var(--border); flex-shrink: 0;
+            padding: 0 1.5rem 0.75rem; border-bottom: 1px solid var(--border); flex-shrink: 0;
         }
         .drawer-title {
             display: flex; align-items: center; gap: 0.5rem;
@@ -281,34 +231,34 @@
         }
         .drawer-close:hover { color: var(--text); }
         .transcript {
-            flex: 1; overflow-y: auto; padding: 1.1rem 1.1rem;
-            display: flex; flex-direction: column; gap: 0.75rem;
+            flex: 1; overflow-y: auto; padding: 1.25rem 1.5rem;
+            display: flex; flex-direction: column; gap: 0.85rem;
         }
         .transcript::-webkit-scrollbar { width: 3px; }
         .transcript::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 99px; }
         .msg {
-            font-size: 0.85rem; line-height: 1.55; padding: 0.65rem 0.95rem;
-            border-radius: 14px; max-width: 90%; word-wrap: break-word;
+            font-size: 0.9rem; line-height: 1.55; padding: 0.75rem 1.1rem;
+            border-radius: 16px; max-width: 78%; word-wrap: break-word;
             animation: msgPop 0.28s cubic-bezier(0.34,1.56,0.64,1);
         }
         @keyframes msgPop { from{opacity:0;transform:translateY(8px) scale(0.97)} to{opacity:1;transform:none} }
-        .msg.user { align-self: flex-end; background: rgba(124,109,250,0.12); border: 1px solid rgba(124,109,250,0.22); border-bottom-right-radius: 4px; }
+        .msg.user { align-self: flex-end; background: rgba(124,109,250,0.1); border: 1px solid rgba(124,109,250,0.2); border-bottom-right-radius: 4px; }
         .msg.ai { align-self: flex-start; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
-        .msg.system { align-self: center; background: transparent; border: none; color: var(--muted); font-size: 0.75rem; padding: 0.2rem 0; max-width: 100%; text-align: center; }
-        .msg.tool { align-self: center; background: rgba(34,197,94,0.04); border: 1px solid rgba(34,197,94,0.15); border-left: 3px solid var(--green); color: var(--green); font-family: var(--mono); font-size: 0.76rem; border-radius: 10px; max-width: 96%; white-space: pre-wrap; line-height: 1.5; }
-        .chat-bar { display: flex; gap: 0.6rem; padding: 0.65rem 1rem 1rem; flex-shrink: 0; border-top: 1px solid var(--border); }
+        .msg.system { align-self: center; background: transparent; border: none; color: var(--muted); font-size: 0.78rem; padding: 0.25rem 0; max-width: 100%; text-align: center; }
+        .msg.tool { align-self: center; background: rgba(34,197,94,0.04); border: 1px solid rgba(34,197,94,0.15); border-left: 3px solid var(--green); color: var(--green); font-family: var(--mono); font-size: 0.78rem; border-radius: 10px; max-width: 90%; white-space: pre-wrap; line-height: 1.5; }
+        .chat-bar { display: flex; gap: 0.75rem; padding: 0.75rem 1.25rem 1.2rem; flex-shrink: 0; }
         .chat-input {
             flex: 1; background: rgba(255,255,255,0.04); border: 1px solid var(--border);
-            border-radius: 10px; padding: 0.6rem 0.9rem; color: var(--text);
-            font-family: var(--font); font-size: 0.85rem; outline: none; transition: border-color 0.18s;
+            border-radius: 12px; padding: 0.7rem 1.1rem; color: var(--text);
+            font-family: var(--font); font-size: 0.88rem; outline: none; transition: border-color 0.18s;
         }
         .chat-input:focus { border-color: rgba(124,109,250,0.45); }
         .chat-input::placeholder { color: var(--muted); }
         .chat-input:disabled { opacity: 0.35; cursor: not-allowed; }
         .btn-send {
             background: var(--accent); border: none; color: #fff;
-            padding: 0.6rem 1.1rem; border-radius: 10px;
-            font-family: var(--font); font-size: 0.85rem; font-weight: 600;
+            padding: 0.7rem 1.4rem; border-radius: 12px;
+            font-family: var(--font); font-size: 0.88rem; font-weight: 600;
             cursor: pointer; transition: all 0.18s; box-shadow: 0 4px 14px var(--accent-glow);
         }
         .btn-send:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--accent-glow); }
@@ -370,7 +320,6 @@
     </style>
 </head>
 <body>
-<canvas id="bgCanvas"></canvas>
 
 <!-- NETWORK ALERT -->
 <div id="networkAlert" class="net-alert hidden">
@@ -393,7 +342,7 @@
             <input type="email" id="authEmail" class="modal-input" placeholder="Email" required>
             <input type="password" id="authPassword" class="modal-input" placeholder="Password" required>
             <input type="tel" id="authPhone" class="modal-input hidden" placeholder="Phone (e.g. +15550199)">
-            <input type="password" id="geminiKey" class="modal-input" placeholder="API Key (NVIDIA nvapi-... or Gemini AIza...)" required>
+            <input type="password" id="geminiKey" class="modal-input" placeholder="Gemini API Key" required>
             <button type="submit" id="authActionBtn" class="modal-submit">Log In</button>
         </form>
     </div>
@@ -410,10 +359,6 @@
         <span id="statusText">Disconnected</span>
     </div>
     <div class="nav-right">
-        <div class="sync-badge" id="googleSyncBadge" onclick="triggerGoogleAuth()">
-            <div class="sync-dot"></div>
-            <span id="syncBadgeText">Calendar Synced</span>
-        </div>
         <select id="voiceConfig" class="voice-select">
             <option value="Aoede">Aoede</option>
             <option value="Kore">Kore</option>
@@ -422,7 +367,6 @@
             <option value="Fenrir">Fenrir</option>
         </select>
         <button class="nav-btn" id="openDrawerBtn">History</button>
-        <button class="nav-btn" id="openTranscriptBtn">Chat</button>
         <div class="profile-menu" id="profileMenu">
             <div class="profile-trigger" id="profileTrigger">
                 <div class="avatar" id="avatarLetter">U</div>
@@ -460,18 +404,13 @@
         </svg>
         <span id="callBtnText">Start Session</span>
     </button>
-
-    <!-- LIVE CAPTIONS -->
-    <div class="caption-wrap" id="captionWrap">
-        <div class="caption-prev" id="captionPrev"></div>
-        <div class="caption-live" id="captionLive">
-            <span class="caption-who" id="captionWho"></span>
-            <span class="caption-text" id="captionText"></span>
-        </div>
-    </div>
 </main>
 
-
+<!-- PEEK BUTTON -->
+<button class="peek-btn" id="openTranscriptBtn">
+    <div class="peek-dot"></div>
+    Transcript &amp; Chat &#8593;
+</button>
 
 <!-- CHAT DRAWER -->
 <div class="drawer" id="chatDrawer">
@@ -522,17 +461,11 @@ const UI = {
     historyList: document.getElementById('historyList'),
     orbGlow: document.getElementById('orbGlow'),
     orbCanvas: document.getElementById('orbCanvas'),
-    captionWrap: document.getElementById('captionWrap'),
-    captionPrev: document.getElementById('captionPrev'),
-    captionLive: document.getElementById('captionLive'),
-    captionWho: document.getElementById('captionWho'),
-    captionText: document.getElementById('captionText'),
 };
 
 let currentUser=null, isCallActive=false, ws=null, audioContext=null, mediaStream=null, audioWorkletNode=null;
 let nextPlayTime=0, sessionId='', userMsgBuf='', aiMsgBuf='', activeBubble=null, activeRole=null;
 let activeSources=[], micAnalyser=null, aiAnalyser=null, recognition=null, phase=0, activeTab='login';
-let captionFadeTimer=null, captionCurrentRole=null, captionCurrentText='';
 
 function switchTab(t) {
     activeTab = t;
@@ -573,42 +506,6 @@ function loadUserProfile() {
     updateStatus('Ready', '');
     addMsg('Session ready. Press Start to connect.', 'system');
     fetchHistory();
-    checkGoogleSyncStatus();
-    startWakeWordListener();
-}
-
-function triggerGoogleAuth() {
-    if (currentUser) {
-        window.location.href = 'http://127.0.0.1:5000/auth/login?user_id=' + currentUser.id;
-    }
-}
-
-async function checkGoogleSyncStatus() {
-    if (!currentUser) return;
-    try {
-        const res = await fetch(`http://127.0.0.1:5000/api/auth_status?user_id=${currentUser.id}&email=${currentUser.email}`);
-        const data = await res.json();
-        const badge = document.getElementById('googleSyncBadge');
-        const badgeText = document.getElementById('syncBadgeText');
-        const googleAuthBtn = document.getElementById('googleAuthBtn');
-        if (data.synced) {
-            if (badge) {
-                badge.classList.remove('unsynced');
-                badgeText.textContent = 'Google Calendar Synced';
-            }
-            if (googleAuthBtn) {
-                googleAuthBtn.textContent = '✅ Google Calendar Connected';
-            }
-        } else {
-            if (badge) {
-                badge.classList.add('unsynced');
-                badgeText.textContent = '⚡ Sync Google Calendar';
-            }
-            if (googleAuthBtn) {
-                googleAuthBtn.textContent = '⚡ Sync Google Calendar';
-            }
-        }
-    } catch(e) { console.warn('Sync status check failed:', e); }
 }
 
 function logout() {
@@ -635,25 +532,9 @@ function addMsg(text, type='system', chunk=false) {
             if (type==='user') userMsgBuf += text;
             if (type==='ai') aiMsgBuf += text;
             UI.transcript.scrollTop = UI.transcript.scrollHeight;
-            // update live caption
-            captionCurrentText += text;
-            UI.captionText.textContent = captionCurrentText;
             return;
         }
         flushBufs();
-        // push previous caption line to dim row
-        if (captionCurrentText.trim()) {
-            UI.captionPrev.textContent = captionCurrentText.trim();
-        }
-        captionCurrentText = text;
-        captionCurrentRole = type;
-        // update who label
-        UI.captionWho.textContent = type === 'user' ? 'You' : 'Sandra';
-        UI.captionWho.className = 'caption-who ' + (type === 'user' ? 'user-who' : 'ai-who');
-        UI.captionText.textContent = text;
-        UI.captionWrap.classList.add('visible');
-        // cancel any pending fade-out
-        if (captionFadeTimer) { clearTimeout(captionFadeTimer); captionFadeTimer = null; }
         activeBubble = document.createElement('div');
         activeBubble.className = 'msg '+type;
         activeBubble.textContent = text;
@@ -731,210 +612,33 @@ async function enumerateMics() {
     } catch(e) { UI.audioSource.innerHTML = '<option>Permission denied</option>'; }
 }
 
-let lastSentSpeech = "";
-let speechTimer = null;
-let currentUtteranceRef = null;
-let isSpeakingTTS = false;
-
-function sendSpeechText(txt) {
-    if (isSpeakingTTS) return;
-    txt = txt.trim();
-    if (!txt || !ws || ws.readyState !== WebSocket.OPEN) return;
-    addMsg(txt, 'user', true);
-    ws.send(JSON.stringify({clientContent:{turns:[{parts:[{text: txt}]}],turnComplete:true}}));
-    UI.chatInput.value = '';
-}
-
 function startSR() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR || recognition) return;
-    try {
-        recognition = new SR();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
-        recognition.onresult = e => {
-            if (isSpeakingTTS) return; // MUTE mic speech recognition during TTS playback to prevent echo loops
-            let f='', it='';
-            for (let i=e.resultIndex; i<e.results.length; i++) {
-                if (e.results[i].isFinal) f += e.results[i][0].transcript;
-                else it += e.results[i][0].transcript;
-            }
-            const currentText = f.trim() || it.trim();
-            if (currentText && !isSpeakingTTS) UI.chatInput.value = currentText;
-            if (f.trim()) {
-                if (speechTimer) clearTimeout(speechTimer);
-                sendSpeechText(f.trim());
-            } else if (it.trim()) {
-                if (speechTimer) clearTimeout(speechTimer);
-                speechTimer = setTimeout(() => { sendSpeechText(it.trim()); }, 350);
-            }
-        };
-        recognition.onerror = e => {
-            console.warn('[SR Error]', e.error);
-            if (isCallActive && e.error !== 'aborted') {
-                setTimeout(() => { if (isCallActive && !recognition) try{ startSR(); }catch(err){} }, 300);
-            }
-        };
-        recognition.onend = () => {
-            recognition = null;
-            if (isCallActive) {
-                setTimeout(() => { if (isCallActive) try{ startSR(); }catch(err){} }, 150);
-            }
-        };
-        recognition.start();
-    } catch(err){
-        console.error('[SR Start Exception]', err);
-    }
-}
-
-let wakeWordRecognition = null;
-
-function startWakeWordListener() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR || wakeWordRecognition || isCallActive) return;
-    try {
-        wakeWordRecognition = new SR();
-        wakeWordRecognition.continuous = true;
-        wakeWordRecognition.interimResults = true;
-        wakeWordRecognition.lang = 'en-US';
-        wakeWordRecognition.onresult = e => {
-            if (isCallActive || isSpeakingTTS) return;
-            let text = '';
-            for (let i = e.resultIndex; i < e.results.length; i++) {
-                text += e.results[i][0].transcript;
-            }
-            const lower = text.toLowerCase();
-            if (lower.includes('hello sandra') || lower.includes('hey sandra') || lower.includes('hi sandra') || lower.includes('sandra')) {
-                console.log('[WAKE WORD DETECTED] "Hello Sandra"!');
-                stopWakeWordListener();
-                if (!isCallActive && currentUser) {
-                    UI.callBtn.click();
-                }
-            }
-        };
-        wakeWordRecognition.onerror = e => {
-            if (e.error !== 'aborted') {
-                setTimeout(() => { if (!isCallActive) try{ wakeWordRecognition.start(); }catch(err){} }, 600);
-            }
-        };
-        wakeWordRecognition.onend = () => {
-            if (!isCallActive) {
-                setTimeout(() => { if (!isCallActive) try{ wakeWordRecognition.start(); }catch(err){} }, 300);
-            }
-        };
-        wakeWordRecognition.start();
-    } catch(err) {}
-}
-
-function stopWakeWordListener() {
-    if (wakeWordRecognition) {
-        try { wakeWordRecognition.abort(); } catch(e) {}
-        wakeWordRecognition = null;
-    }
-}
-
-function stopSR() {
-    if (recognition) {
-        try { recognition.abort(); } catch(e) {}
-        recognition = null;
-    }
-}
-
-let bestVoice = null;
-function loadBestVoice() {
-    if (!('speechSynthesis' in window)) return;
-    const voices = window.speechSynthesis.getVoices();
-    if (!voices || !voices.length) return;
-    bestVoice = voices.find(v => (v.name.includes('Natural') || v.name.includes('Online (Natural)')) && v.lang.startsWith('en'))
-             || voices.find(v => v.name.includes('Google US English') || v.name.includes('Google UK English Female'))
-             || voices.find(v => (v.name.includes('Samantha') || v.name.includes('Zira') || v.name.includes('Jenny') || v.name.includes('Aria')) && !v.name.includes('Male'))
-             || voices.find(v => v.lang.startsWith('en') && !v.name.includes('Male'))
-             || voices[0];
-}
-if ('speechSynthesis' in window) {
-    window.speechSynthesis.onvoiceschanged = loadBestVoice;
-    loadBestVoice();
-}
-
-function speakText(rawText, onEnd) {
-    if (!('speechSynthesis' in window)) {
-        if (onEnd) onEnd();
-        return;
-    }
-    
-    let clean = rawText
-        .replace(/\[END_CALL\]/g, '')
-        .replace(/\[TOOL_CALL:[^\]]*\]/g, '')
-        .replace(/https?:\/\/\S+/g, '')
-        .replace(/[*#_~`>]+/g, '')
-        .replace(/[\r\n]+/g, '. ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-    if (!clean) {
-        if (onEnd) onEnd();
-        return;
-    }
-
-    try {
-        if (window.speechSynthesis.paused) {
-            window.speechSynthesis.resume();
+    if (!SR) return;
+    recognition = new SR();
+    recognition.continuous = true; recognition.interimResults = true; recognition.lang = 'en-US';
+    recognition.onresult = e => {
+        let f='', it='';
+        for (let i=e.resultIndex; i<e.results.length; i++) {
+            if (e.results[i].isFinal) f += e.results[i][0].transcript;
+            else it += e.results[i][0].transcript;
         }
-    } catch(e){}
-
-    setTimeout(() => {
-        try {
-            const ut = new SpeechSynthesisUtterance(clean);
-            ut.rate = 1.08;
-            ut.pitch = 1.0;
-            ut.volume = 1.0;
-            
-            if (!bestVoice) loadBestVoice();
-            if (bestVoice) ut.voice = bestVoice;
-            
-            currentUtteranceRef = ut;
-
-            ut.onstart = () => {
-                isSpeakingTTS = true;
-                updateStatus('Agent Speaking...', 'speaking');
-                if (UI.captionText && UI.captionWrap) {
-                    UI.captionPrev.textContent = UI.captionText.textContent;
-                    UI.captionText.textContent = clean;
-                    UI.captionWrap.classList.add('visible');
-                }
-            };
-            ut.onend = () => {
-                currentUtteranceRef = null;
-                updateStatus('Listening...', 'live');
-                setTimeout(() => { isSpeakingTTS = false; }, 200);
-                if (onEnd) onEnd();
-            };
-            ut.onerror = (e) => {
-                console.warn('TTS Utterance Notice:', e);
-                currentUtteranceRef = null;
-                updateStatus('Listening...', 'live');
-                setTimeout(() => { isSpeakingTTS = false; }, 200);
-                if (onEnd) onEnd();
-            };
-            window.speechSynthesis.speak(ut);
-        } catch(err) {
-            console.error('TTS Speak Error:', err);
-            currentUtteranceRef = null;
-            isSpeakingTTS = false;
-            if (onEnd) onEnd();
-        }
-    }, 40);
+        if (f||it) UI.chatInput.value = f||it;
+    };
+    recognition.onerror = e => console.error(e);
+    recognition.start();
 }
+
+function stopSR() { if (recognition) { recognition.stop(); recognition = null; } }
 
 UI.callBtn.addEventListener('click', async () => {
-    stopWakeWordListener();
     if (!currentUser) return alert('Please log in first.');
     isCallActive = !isCallActive;
     if (isCallActive) {
         sessionId = 'session_'+Date.now();
         UI.callBtn.classList.add('active');
         UI.callBtnText.textContent = 'End Session';
+        UI.chatDrawer.classList.add('open');
         updateStatus('Listening...', 'live');
         addMsg('Connecting to voice agent...', 'system');
         const key = localStorage.getItem('gemini_api_key');
@@ -944,9 +648,9 @@ UI.callBtn.addEventListener('click', async () => {
             try { const r = await fetch('http://127.0.0.1:5000/api/get_memory?user_id='+currentUser.id); const d = await r.json(); mem = d.context; }
             catch(e) { console.error(e); }
             const dt = new Date().toString(), tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            const sp = 'You are Sandra, a premium AI voice assistant.\nToday: '+dt+'. Timezone: '+tz+'.\n'+mem+'\nTools: update_user_memory, send_email, add_todo, check_availability, book_meeting (with Google Meet video link), web_search.';
+            const sp = 'You are Sandra, a premium AI voice assistant.\nToday: '+dt+'. Timezone: '+tz+'.\n'+mem+'\nTools: update_user_memory, send_email, add_todo, check_availability, book_meeting, web_search.';
             ws.send(JSON.stringify({setup:{
-                model:'models/gemini-2.0-flash-exp',
+                model:'models/gemini-3.1-flash-live-preview',
                 generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:UI.voiceConfig.value}}},thinkingConfig:{thinkingLevel:'MINIMAL'}},
                 systemInstruction:{parts:[{text:sp}]},
                 tools:[{functionDeclarations:[
@@ -958,31 +662,24 @@ UI.callBtn.addEventListener('click', async () => {
                     {name:'web_search',description:'Web search.',parameters:{type:'OBJECT',properties:{query:{type:'STRING'}},required:['query']}}
                 ]}]
             }}));
-            try {
-                audioContext = new AudioContext({sampleRate:16000});
-                micAnalyser = audioContext.createAnalyser(); micAnalyser.fftSize = 256;
-                aiAnalyser = audioContext.createAnalyser(); aiAnalyser.fftSize = 256;
-                mediaStream = await navigator.mediaDevices.getUserMedia({audio:{deviceId:UI.audioSource.value?{exact:UI.audioSource.value}:undefined,sampleRate:16000,channelCount:1}});
-                const src = audioContext.createMediaStreamSource(mediaStream);
-                src.connect(micAnalyser);
-                await audioContext.audioWorklet.addModule(URL.createObjectURL(new Blob(["class PCMProcessor extends AudioWorkletProcessor{process(inputs){const ch=inputs[0][0];if(ch){const i16=new Int16Array(ch.length);for(let i=0;i<ch.length;i++)i16[i]=Math.max(-32768,Math.min(32767,ch[i]*32768));this.port.postMessage(i16.buffer,[i16.buffer]);}return true;}}registerProcessor('pcm-processor',PCMProcessor);"],{type:'application/javascript'})));
-                audioWorkletNode = new AudioWorkletNode(audioContext,'pcm-processor');
-                src.connect(audioWorkletNode);
-                audioWorkletNode.port.onmessage = e => {
-                    if (ws && ws.readyState===WebSocket.OPEN)
-                        ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{mimeType:'audio/pcm',data:ab2b64(e.data)}]}}));
-                };
-            } catch(micErr) { console.warn('Audio worklet init non-fatal warning:', micErr); }
-
+            audioContext = new AudioContext({sampleRate:16000});
+            micAnalyser = audioContext.createAnalyser(); micAnalyser.fftSize = 256;
+            aiAnalyser = audioContext.createAnalyser(); aiAnalyser.fftSize = 256;
+            mediaStream = await navigator.mediaDevices.getUserMedia({audio:{deviceId:UI.audioSource.value?{exact:UI.audioSource.value}:undefined,sampleRate:16000,channelCount:1}});
+            const src = audioContext.createMediaStreamSource(mediaStream);
+            src.connect(micAnalyser);
+            await audioContext.audioWorklet.addModule(URL.createObjectURL(new Blob(["class PCMProcessor extends AudioWorkletProcessor{process(inputs){const ch=inputs[0][0];if(ch){const i16=new Int16Array(ch.length);for(let i=0;i<ch.length;i++)i16[i]=Math.max(-32768,Math.min(32767,ch[i]*32768));this.port.postMessage(i16.buffer,[i16.buffer]);}return true;}}registerProcessor('pcm-processor',PCMProcessor);"],{type:'application/javascript'})));
+            audioWorkletNode = new AudioWorkletNode(audioContext,'pcm-processor');
+            src.connect(audioWorkletNode);
+            audioWorkletNode.port.onmessage = e => {
+                if (ws && ws.readyState===WebSocket.OPEN)
+                    ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{mimeType:'audio/pcm',data:ab2b64(e.data)}]}}));
+            };
             UI.chatInput.removeAttribute('disabled'); UI.sendTextBtn.removeAttribute('disabled');
             UI.chatInput.placeholder = 'Type a message...';
             startSR();
             addMsg('Voice agent connected!', 'system');
         };
-        let aiTurnTtsText = "";
-        let hasBinaryAudio = false;
-        let shouldAutoEndCall = false;
-
         ws.onmessage = async e => {
             const msg = JSON.parse(e.data);
             if (msg.toolCall) {
@@ -999,83 +696,22 @@ UI.callBtn.addEventListener('click', async () => {
             if (msg.serverContent) {
                 const c = msg.serverContent;
                 if (c.inputTranscription&&c.inputTranscription.text) addMsg(c.inputTranscription.text,'user',true);
-                if (c.outputTranscription&&c.outputTranscription.text) {
-                    let chunkText = c.outputTranscription.text;
-                    if (chunkText.includes('[END_CALL]')) {
-                        shouldAutoEndCall = true;
-                        chunkText = chunkText.replace(/\[END_CALL\]/g, '');
-                    }
-                    if (chunkText) {
-                        updateStatus('Agent Speaking...','speaking');
-                        addMsg(chunkText,'ai',true);
-                        aiTurnTtsText += chunkText;
-                    }
-                }
-                if (c.modelTurn) {
-                    for (const p of c.modelTurn.parts) {
-                        if (p.inlineData) {
-                            hasBinaryAudio = true;
-                            playB64(p.inlineData.data);
-                        }
-                    }
-                }
-                if (c.turnComplete) {
-                    updateStatus('Listening...','live');
-                    activeBubble=null;
-
-                    if (!hasBinaryAudio && aiTurnTtsText.trim()) {
-                        speakText(aiTurnTtsText, () => {
-                            if (shouldAutoEndCall) {
-                                setTimeout(() => stopCall(), 600);
-                            }
-                        });
-                    } else if (shouldAutoEndCall) {
-                        setTimeout(() => stopCall(), 800);
-                    }
-
-                    aiTurnTtsText = "";
-                    hasBinaryAudio = false;
-
-                    // fade caption out after 3.5s of silence
-                    captionFadeTimer = setTimeout(() => {
-                        UI.captionWrap.classList.remove('visible');
-                        captionFadeTimer = null;
-                    }, 3500);
-                }
+                if (c.outputTranscription&&c.outputTranscription.text) { updateStatus('Agent Speaking...','speaking'); addMsg(c.outputTranscription.text,'ai',true); }
+                if (c.modelTurn) { for (const p of c.modelTurn.parts) { if (p.inlineData) playB64(p.inlineData.data); } }
+                if (c.turnComplete) { updateStatus('Listening...','live'); activeBubble=null; }
             }
         };
         ws.onclose = () => { isCallActive=false; cleanUp(); };
     } else { stopCall(); }
 });
 
-function stopCall() {
-    if ('speechSynthesis' in window) {
-        try { window.speechSynthesis.cancel(); } catch(err){}
-    }
-    if (ws) ws.close();
-    cleanUp();
-}
-
-let isCleaningUp = false;
+function stopCall() { if (ws) ws.close(); cleanUp(); }
 
 function cleanUp() {
-    if ('speechSynthesis' in window) {
-        try { window.speechSynthesis.cancel(); } catch(err){}
-    }
-    if (isCleaningUp) return;
-    isCleaningUp = true;
     UI.callBtn.classList.remove('active');
     UI.callBtnText.textContent = 'Start Session';
     updateStatus('Call Ended','muted');
     flushBufs();
-    // clear captions
-    if (captionFadeTimer) clearTimeout(captionFadeTimer);
-    captionFadeTimer = setTimeout(() => {
-        UI.captionWrap.classList.remove('visible');
-        UI.captionPrev.textContent = '';
-        UI.captionText.textContent = '';
-        captionCurrentText = '';
-    }, 1500);
     setTimeout(summarize, 1500);
     UI.chatInput.setAttribute('disabled','true'); UI.sendTextBtn.setAttribute('disabled','true');
     UI.chatInput.placeholder = 'Connect a call to type...'; UI.chatInput.value = '';
@@ -1084,7 +720,6 @@ function cleanUp() {
     if (mediaStream) mediaStream.getTracks().forEach(t=>t.stop());
     if (audioContext) audioContext.close();
     if (ws) { ws.close(); ws=null; }
-    setTimeout(() => { isCleaningUp = false; startWakeWordListener(); }, 2000);
 }
 
 async function summarize() {
@@ -1171,14 +806,9 @@ function renderOrb() {
 }
 
 // DRAWER + PROFILE WIRING
-function openTranscriptPanel() {
-    UI.chatDrawer.classList.add('open');
-}
-function closeTranscriptPanel() {
-    UI.chatDrawer.classList.remove('open');
-}
-document.getElementById('closeDrawerBtn').addEventListener('click', closeTranscriptPanel);
-document.getElementById('openTranscriptBtn').addEventListener('click', openTranscriptPanel);
+document.getElementById('drawerHandle').addEventListener('click', () => UI.chatDrawer.classList.toggle('open'));
+document.getElementById('closeDrawerBtn').addEventListener('click', () => UI.chatDrawer.classList.remove('open'));
+document.getElementById('openTranscriptBtn').addEventListener('click', () => UI.chatDrawer.classList.add('open'));
 document.getElementById('openDrawerBtn').addEventListener('click', () => document.getElementById('historyDrawer').classList.add('open'));
 document.getElementById('closeHistoryBtn').addEventListener('click', () => document.getElementById('historyDrawer').classList.remove('open'));
 document.getElementById('profileTrigger').addEventListener('click', e => { e.stopPropagation(); document.getElementById('profileMenu').classList.toggle('open'); });
@@ -1186,128 +816,21 @@ document.addEventListener('click', e => { if(!document.getElementById('profileMe
 document.getElementById('googleAuthBtn').addEventListener('click', () => { if(currentUser) window.location.href='http://127.0.0.1:5000/auth/login?user_id='+currentUser.id; });
 
 window.addEventListener('load', () => {
-    let savedKey = localStorage.getItem('gemini_api_key');
-    if (!savedKey) {
-        savedKey = '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';
-        localStorage.setItem('gemini_api_key', savedKey);
-    }
-    if (UI.geminiKey) UI.geminiKey.value = savedKey;
-    let su = localStorage.getItem('user');
-    if (!su) {
-        currentUser = { id: 5, email: 'user@novavoice.ai', phone_number: '+1234567890' };
-        localStorage.setItem('user', JSON.stringify(currentUser));
-    } else {
-        try { currentUser = JSON.parse(su); } catch(e) {
-            currentUser = { id: 5, email: 'user@novavoice.ai', phone_number: '+1234567890' };
-            localStorage.setItem('user', JSON.stringify(currentUser));
-        }
-    }
-    UI.authModal.classList.add('hidden');
-    loadUserProfile();
+    const su=localStorage.getItem('user'), sk=localStorage.getItem('gemini_api_key');
+    if (su && sk) { currentUser=JSON.parse(su); UI.geminiKey.value=sk; UI.authModal.classList.add('hidden'); loadUserProfile(); }
     enumerateMics();
     const p = new URLSearchParams(window.location.search);
     if (p.has('auth_success')) { addMsg('Google Calendar connected!','system'); window.history.replaceState({},document.title,window.location.pathname); }
-    initAurora();
     renderOrb();
     if (typeof gsap !== 'undefined') {
         gsap.from('.nav', {y:-18, opacity:0, duration:0.7, ease:'power3.out'});
         gsap.from('.stage > *', {y:20, opacity:0, duration:0.7, stagger:0.1, ease:'power3.out', delay:0.15});
     }
 });
-
-// ── AURORA BACKGROUND RENDERER ──────────────────────────────────────────────
-function initAurora() {
-    const canvas = document.getElementById('bgCanvas');
-    const ctx    = canvas.getContext('2d');
-
-    // Each blob: { cx, cy, rx, ry, color, phases[], speeds[], ampX, ampY, baseR, pulseAmp, pulseSpeed }
-    const blobs = [
-        // large deep-blue anchor
-        { cx:.50, cy:.88, rx:.70, ry:.55, color:'rgba(15,45,155,ALP)',   phases:[0,   1.2, 2.4], speeds:[.17,.11,.23], ampX:.10, ampY:.06, baseR:.55, pulseAmp:.06, pulseSpeed:.7  },
-        // indigo left
-        { cx:.15, cy:.65, rx:.48, ry:.40, color:'rgba(60,18,148,ALP)',   phases:[1.0, 2.5, 0.5], speeds:[.13,.19,.09], ampX:.12, ampY:.10, baseR:.38, pulseAmp:.07, pulseSpeed:.5  },
-        // teal right-upper
-        { cx:.82, cy:.30, rx:.44, ry:.36, color:'rgba(6,80,148,ALP)',    phases:[2.1, 0.4, 3.0], speeds:[.21,.14,.17], ampX:.09, ampY:.12, baseR:.34, pulseAmp:.05, pulseSpeed:.9  },
-        // cyan accent
-        { cx:.62, cy:.72, rx:.34, ry:.28, color:'rgba(0,120,180,ALP)',   phases:[0.7, 3.1, 1.8], speeds:[.18,.22,.12], ampX:.13, ampY:.09, baseR:.27, pulseAmp:.09, pulseSpeed:1.1 },
-        // violet upper-left
-        { cx:.22, cy:.28, rx:.38, ry:.30, color:'rgba(72,24,170,ALP)',   phases:[3.0, 0.9, 2.0], speeds:[.10,.16,.20], ampX:.08, ampY:.11, baseR:.28, pulseAmp:.06, pulseSpeed:.6  },
-        // sapphire lower-right
-        { cx:.78, cy:.80, rx:.40, ry:.32, color:'rgba(30,65,190,ALP)',   phases:[1.5, 2.0, 0.3], speeds:[.15,.12,.18], ampX:.11, ampY:.08, baseR:.32, pulseAmp:.08, pulseSpeed:.8  },
-        // centre halo
-        { cx:.50, cy:.50, rx:.30, ry:.24, color:'rgba(90,140,200,ALP)',  phases:[2.8, 1.3, 3.5], speeds:[.08,.10,.14], ampX:.06, ampY:.06, baseR:.24, pulseAmp:.04, pulseSpeed:.4  },
-    ];
-
-    function resize() {
-        canvas.width  = window.innerWidth;
-        canvas.height = window.innerHeight;
-    }
-    resize();
-    window.addEventListener('resize', resize);
-
-    let t = 0;
-    function tick() {
-        const W = canvas.width, H = canvas.height;
-        ctx.clearRect(0, 0, W, H);
-
-        // dark navy base
-        ctx.fillStyle = '#0C1630';
-        ctx.fillRect(0, 0, W, H);
-
-        ctx.globalCompositeOperation = 'lighter';
-
-        blobs.forEach(b => {
-            // multi-harmonic position noise
-            const dx = b.ampX * W * (
-                Math.sin(t * b.speeds[0] + b.phases[0]) * .6 +
-                Math.sin(t * b.speeds[1] * 1.7 + b.phases[1]) * .3 +
-                Math.sin(t * b.speeds[2] * 0.4 + b.phases[2]) * .1
-            );
-            const dy = b.ampY * H * (
-                Math.cos(t * b.speeds[0] + b.phases[0] + 1) * .6 +
-                Math.cos(t * b.speeds[2] * 1.3 + b.phases[2]) * .4
-            );
-            const px = b.cx * W + dx;
-            const py = b.cy * H + dy;
-
-            // pulsing radius
-            const pulse = 1 + b.pulseAmp * Math.sin(t * b.pulseSpeed + b.phases[1]);
-            const rx = b.rx * W * pulse;
-            const ry = b.ry * H * pulse;
-
-            // draw elliptical gradient using scale trick
-            ctx.save();
-            ctx.translate(px, py);
-            ctx.scale(1, ry / rx);
-
-            const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
-            const col = b.color;
-            grad.addColorStop(0,    col.replace('ALP', '0.38'));
-            grad.addColorStop(0.35, col.replace('ALP', '0.22'));
-            grad.addColorStop(0.65, col.replace('ALP', '0.08'));
-            grad.addColorStop(1,    col.replace('ALP', '0'));
-
-            ctx.beginPath();
-            ctx.arc(0, 0, rx, 0, Math.PI * 2);
-            ctx.fillStyle = grad;
-            ctx.fill();
-            ctx.restore();
-        });
-
-        // subtle dark vignette to punch depth
-        ctx.globalCompositeOperation = 'source-over';
-        const vig = ctx.createRadialGradient(W/2, H/2, H * .15, W/2, H/2, H * .85);
-        vig.addColorStop(0, 'transparent');
-        vig.addColorStop(1, 'rgba(2,4,18,0.72)');
-        ctx.fillStyle = vig;
-        ctx.fillRect(0, 0, W, H);
-
-        ctx.globalCompositeOperation = 'source-over';
-        t += 0.008;
-        requestAnimationFrame(tick);
-    }
-    tick();
-}
 </script>
 </body>
-</html>
+</html>"""
+
+with open(r'index.html', 'w', encoding='utf-8') as f:
+    f.write(html)
+print(f'Written {len(html)} bytes, {html.count(chr(10))} lines')

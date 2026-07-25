@@ -1,6 +1,7 @@
 # Ignore environment variables and security credentials
 .env
 token.json
+tokens/
 
 # Ignore Python cache and virtual environment
 __pycache__/
@@ -15,3 +16,13 @@ step3_transcription.py
 step4_booking_tool.py
 step5_e2e.py
 response.wav
+
+# Ignore SQLite runtime databases & session summaries
+*.db
+summaries/
+
+# Ignore agent config and cloned skills
+.agents/
+agentic-awesome-skills/
+AntiGravity-Design-Skills/
+

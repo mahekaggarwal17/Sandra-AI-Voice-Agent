@@ -93,7 +93,8 @@ Create a file named `.env` in the root directory of your project and populate it
 ```ini
 GOOGLE_CLIENT_ID=your_google_oauth_client_id
 GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
-GOOGLE_REDIRECT_URI=http://localhost:8000/auth/callback
+GOOGLE_AUTH_REDIRECT_URI=http://localhost:8000/auth/callback
+GOOGLE_API_REDIRECT_URI=http://localhost:5000/auth/callback
 HOST_CALENDAR_ID=your_email@gmail.com
 HOST_EMAIL=your_email@gmail.com
 FRONTEND_URL=http://localhost:8000
@@ -120,9 +121,10 @@ SECRET_KEY=your_random_secret_key_for_sessions
      ```text
      http://localhost:8000
      ```
-   * **Authorized redirect URIs:**
+   * **Authorized redirect URIs (Register both):**
      ```text
      http://localhost:8000/auth/callback
+     http://localhost:5000/auth/callback
      ```
 5. Click **Create** and copy your **Client ID** and **Client Secret** into your `.env` file.
 6. **Enable User Access:** In the Cloud Console left sidebar, click **OAuth consent screen**. Scroll to the **Test users** section, click **Add Users**, and enter your login email address (the calendar account you want to give access to).
