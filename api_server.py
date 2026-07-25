@@ -899,19 +899,24 @@ async def proxy_handler(websocket, path=None):
             async def client_to_gemini():
                 try:
                     async for message in websocket:
+                        if isinstance(message, str) and '{"ping"' in message.replace(" ", ""):
+                            continue
                         await gemini_ws.send(message)
                         
                         try:
-                            data = json.loads(message)
-                            if "clientContent" in data:
-                                turns = data["clientContent"].get("turns", [])
-                                for turn in turns:
-                                    parts = turn.get("parts", [])
-                                    for part in parts:
-                                        if "text" in part:
-                                            database.log_message(session_id, "user", part["text"], user_id)
+                            if isinstance(message, str):
+                                msg_json = json.loads(message)
+                                if "realtimeInput" not in msg_json:
+                                    if "clientContent" in msg_json:
+                                        for turn in msg_json["clientContent"].get("turns", []):
+                                            if turn["role"] == "user":
+                                                for part in turn.get("parts", []):
+                                                    if "text" in part:
+                                                        database.log_message(session_id, "user", part["text"], user_id)
                         except Exception:
                             pass
+                except asyncio.CancelledError:
+                    pass
                 except Exception as e:
                     print(f"Proxy client_to_gemini exception: {e}")
                     
@@ -930,10 +935,16 @@ async def proxy_handler(websocket, path=None):
                                         database.log_message(session_id, "model", part["text"], user_id)
                         except Exception:
                             pass
+                except asyncio.CancelledError:
+                    pass
                 except Exception as e:
                     print(f"Proxy gemini_to_client exception: {e}")
                     
-            await asyncio.gather(client_to_gemini(), gemini_to_client())
+            t1 = asyncio.create_task(client_to_gemini())
+            t2 = asyncio.create_task(gemini_to_client())
+            done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
             
     except Exception as e:
         print(f"[PROXY] Connection session error: {e}")
@@ -1031,16 +1042,26 @@ def unified_ws_endpoint(ws):
                     async def client_to_gemini():
                         try:
                             async for message in adapter:
+                                if isinstance(message, str) and '{"ping"' in message.replace(" ", ""):
+                                    continue
                                 await gemini_ws.send(message)
+                        except asyncio.CancelledError:
+                            pass
                         except Exception as e:
                             print(f"Proxy client_to_gemini exception: {e}")
                     async def gemini_to_client():
                         try:
                             async for message in gemini_ws:
                                 await adapter.send(message)
+                        except asyncio.CancelledError:
+                            pass
                         except Exception as e:
                             print(f"Proxy gemini_to_client exception: {e}")
-                    await asyncio.gather(client_to_gemini(), gemini_to_client())
+                    t1 = asyncio.create_task(client_to_gemini())
+                    t2 = asyncio.create_task(gemini_to_client())
+                    done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
+                    for task in pending:
+                        task.cancel()
             loop.run_until_complete(handle_gemini())
     except Exception as e:
         print(f"[SOCK PROXY] Exception: {e}")

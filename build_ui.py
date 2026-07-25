@@ -642,8 +642,11 @@ UI.callBtn.addEventListener('click', async () => {
         updateStatus('Listening...', 'live');
         addMsg('Connecting to voice agent...', 'system');
         const key = localStorage.getItem('gemini_api_key');
-        ws = new WebSocket('ws://localhost:5001/?user_id='+currentUser.id+'&key='+key);
+        const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(wsProto + '//' + window.location.host + '/ws?user_id=' + currentUser.id + '&key=' + key);
+        let pingTimer = null;
         ws.onopen = async () => {
+            pingTimer = setInterval(() => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ping:true})); }, 15000);
             let mem = 'No past memory found.';
             try { const r = await fetch('http://127.0.0.1:5000/api/get_memory?user_id='+currentUser.id); const d = await r.json(); mem = d.context; }
             catch(e) { console.error(e); }
@@ -688,9 +691,9 @@ UI.callBtn.addEventListener('click', async () => {
                 try {
                     const r = await fetch('http://127.0.0.1:5000/api/tool_call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tool_name:call.name,tool_args:call.args,user_id:currentUser.id})});
                     const result = await r.json();
-                    ws.send(JSON.stringify({toolResponse:{functionResponses:[{id:call.id,name:call.name,response:{result:JSON.stringify(result)}}]}}));
+                    ws.send(JSON.stringify({toolResponse:{functionResponses:[{id:call.id,name:call.name,response: typeof result === 'object' && result !== null ? result : { output: result }}]}}));
                 } catch(err) {
-                    ws.send(JSON.stringify({toolResponse:{functionResponses:[{id:call.id,name:call.name,response:{result:JSON.stringify({error:err.message})}}]}}));
+                    ws.send(JSON.stringify({toolResponse:{functionResponses:[{id:call.id,name:call.name,response:{ error: err.message }}]}}));
                 }
             }
             if (msg.serverContent) {
@@ -701,7 +704,16 @@ UI.callBtn.addEventListener('click', async () => {
                 if (c.turnComplete) { updateStatus('Listening...','live'); activeBubble=null; }
             }
         };
-        ws.onclose = () => { isCallActive=false; cleanUp(); };
+        ws.onclose = () => { 
+            if (pingTimer) clearInterval(pingTimer);
+            let wasActive = isCallActive && !isCleaningUp;
+            isCallActive = false; 
+            cleanUp(); 
+            if (wasActive) {
+                addMsg('Connection lost. Reconnecting in 3 seconds...', 'system');
+                setTimeout(() => { if (!isCallActive && typeof isCleaningUp !== "undefined" && !isCleaningUp) UI.callBtn.click(); else if (!isCallActive) UI.callBtn.click(); }, 3000);
+            }
+        };
     } else { stopCall(); }
 });
 
