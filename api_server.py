@@ -90,11 +90,15 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 def get_oauth_redirect_uri():
+    scheme = 'https' if (request.headers.get('X-Forwarded-Proto') == 'https' or request.is_secure or 'onrender.com' in request.host) else request.scheme
+    auto_uri = f"{scheme}://{request.host}/auth/callback"
+    
     configured_uri = os.getenv("GOOGLE_API_REDIRECT_URI")
     if configured_uri and "your-app-name" not in configured_uri and "example.com" not in configured_uri:
-        return configured_uri
-    scheme = 'https' if (request.headers.get('X-Forwarded-Proto') == 'https' or request.is_secure or 'onrender.com' in request.host) else request.scheme
-    return f"{scheme}://{request.host}/auth/callback"
+        if request.host in configured_uri:
+            return configured_uri
+            
+    return auto_uri
 
 @app.route('/auth/login')
 def auth_login():
@@ -133,6 +137,7 @@ def auth_login():
     
     state = json.dumps({"user_id": int(user_id)})
     redirect_uri = get_oauth_redirect_uri()
+    print(f"[OAUTH] Requesting OAuth with redirect_uri: {redirect_uri}", flush=True)
     
     flow = Flow.from_client_config(
         client_config,
