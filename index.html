@@ -1004,8 +1004,9 @@ UI.callBtn.addEventListener('click', async () => {
             if (msg.serverContent) {
                 const c = msg.serverContent;
                 if (c.inputTranscription&&c.inputTranscription.text) {
+                    shouldAutoEndCall = false;
                     const uTxt = c.inputTranscription.text.toLowerCase().trim();
-                    if (uTxt === 'hang up' || uTxt === 'end call' || uTxt === 'end session' || uTxt === 'goodbye sandra') {
+                    if (uTxt === 'hang up' || uTxt === 'end call' || uTxt === 'end session') {
                         shouldAutoEndCall = true;
                     }
                     addMsg(c.inputTranscription.text,'user',true);
@@ -1034,18 +1035,22 @@ UI.callBtn.addEventListener('click', async () => {
                     updateStatus('Listening...','live');
                     activeBubble=null;
 
-                    if (!hasBinaryAudio && aiTurnTtsText.trim()) {
-                        speakText(aiTurnTtsText, () => {
-                            if (shouldAutoEndCall) {
+                    const textToSpeak = aiTurnTtsText.trim();
+                    const willEndCall = shouldAutoEndCall;
+                    
+                    aiTurnTtsText = "";
+                    hasBinaryAudio = false;
+                    shouldAutoEndCall = false;
+
+                    if (!hasBinaryAudio && textToSpeak) {
+                        speakText(textToSpeak, () => {
+                            if (willEndCall) {
                                 setTimeout(() => stopCall(), 600);
                             }
                         });
-                    } else if (shouldAutoEndCall) {
+                    } else if (willEndCall) {
                         setTimeout(() => stopCall(), 800);
                     }
-
-                    aiTurnTtsText = "";
-                    hasBinaryAudio = false;
 
                     // fade caption out after 3.5s of silence
                     captionFadeTimer = setTimeout(() => {

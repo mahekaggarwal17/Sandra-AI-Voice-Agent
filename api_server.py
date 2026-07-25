@@ -805,14 +805,18 @@ async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_
                 threading.Thread(target=fetch_stream, args=(q, loop), daemon=True).start()
 
                 full_ai_response = ""
+                err_msg = None
                 while True:
                     kind, val = await q.get()
                     if kind == "CHUNK":
                         full_ai_response += val
                     elif kind == "ERR":
-                        pass
+                        err_msg = val
                     elif kind == "DONE":
                         break
+
+                if not full_ai_response and err_msg:
+                    full_ai_response = "I am sorry, I encountered a temporary issue connecting to the AI service. Please try speaking again."
 
                 if full_ai_response:
                     clean_spoken = re.sub(r'\[TOOL_CALL:[\s\S]*?\]', '', full_ai_response).strip()
