@@ -702,7 +702,8 @@ async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_
         "1. Speak naturally in concise, conversational sentences (1-2 sentences) ideal for text-to-speech.\n"
         "2. NEVER read technical code lines, JSON brackets, event IDs, format symbols, or function syntax out loud.\n"
         "3. When you need to perform an action (check calendar, book meeting, send email, add task, save memory), write [TOOL_CALL: function_name({\"arg\": \"value\"})].\n"
-        "4. Available tools: check_availability, book_meeting, send_email, add_todo, update_user_memory, web_search."
+        "4. Available tools: check_availability, book_meeting, send_email, add_todo, update_user_memory, web_search.\n"
+        "5. AUTO-END SESSION RULE: When the user says or implies they are finished (e.g., 'nothing else is needed', 'nothing else', 'that is all', 'no thanks', 'bye', 'goodbye', 'i am done', 'all set'), give a warm 1-sentence farewell and append [END_CALL] at the end of your text."
     )
     try:
         context = database.get_profile_context(user_id)
