@@ -23,7 +23,7 @@ def get_google_creds(user_email: str = None, user_id: int = None):
             if user:
                 token_data = database.get_oauth_token(user['id'])
     except Exception as db_err:
-        print(f"⚠️ Database token fetch failed: {db_err}. Falling back to file storage.")
+        print(f"[WARN] Database token fetch failed: {db_err}. Falling back to file storage.")
 
     if token_data:
         scopes = [
@@ -97,7 +97,6 @@ def parse_flexible_datetime(date_time_str: str, timezone_name: str = "UTC") -> d
     # Extract time component if present (e.g. 3pm, 3:30 pm, 15:00, 9am)
     target_hour = 10
     target_minute = 0
-    time_found = False
     time_match = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', s, re.IGNORECASE)
     if time_match:
         h = int(time_match.group(1))
@@ -110,7 +109,6 @@ def parse_flexible_datetime(date_time_str: str, timezone_name: str = "UTC") -> d
         if 0 <= h <= 23 and 0 <= m <= 59:
             target_hour = h
             target_minute = m
-            time_found = True
 
     # Relative date parsing
     s_lower = s.lower()
@@ -236,7 +234,7 @@ def check_availability(date_iso: str = "today", timezone_name: str = "UTC", user
         alternates = find_alternate_slots(service, dt, user_tz, calendar_id)
         alt_str = ""
         if alternates:
-            alt_lines = [f"  • {alt.strftime('%A, %b %d at %I:%M %p')}" for alt in alternates]
+            alt_lines = [f"  * {alt.strftime('%A, %b %d at %I:%M %p')}" for alt in alternates]
             alt_str = "\n\nSuggested free slots:\n" + "\n".join(alt_lines)
             
         if not events:
@@ -249,20 +247,20 @@ def check_availability(date_iso: str = "today", timezone_name: str = "UTC", user
             summary = event.get('summary', 'Busy')
             
             if 'dateTime' not in event['start']:
-                busy_times.append(f"• All day: {summary}")
+                busy_times.append(f"* All day: {summary}")
             else:
                 estart_dt = datetime.datetime.fromisoformat(estart_raw.replace('Z', '+00:00')).astimezone(user_tz)
                 eend_dt = datetime.datetime.fromisoformat(eend_raw.replace('Z', '+00:00')).astimezone(user_tz)
-                busy_times.append(f"• {estart_dt.strftime('%I:%M %p')} - {eend_dt.strftime('%I:%M %p')}: {summary}")
+                busy_times.append(f"* {estart_dt.strftime('%I:%M %p')} - {eend_dt.strftime('%I:%M %p')}: {summary}")
                 
         return f"Schedule for {day_name}:\n" + "\n".join(busy_times) + alt_str
 
     except Exception as gcal_err:
-        print(f"⚠️ Google Calendar API notice ({gcal_err}). Using local database schedule.")
+        print(f"[WARN] Google Calendar API notice ({gcal_err}). Using local database schedule.")
         local_evs = database.get_local_meetings(user_id=user_id, date_prefix=formatted_date)
         if not local_evs:
             return f"Your schedule is completely open on {day_name}."
-        busy_times = [f"• {ev['title']} ({ev['start_time']} to {ev['end_time']})" for ev in local_evs]
+        busy_times = [f"* {ev['title']} ({ev['start_time']} to {ev['end_time']})" for ev in local_evs]
         return f"Schedule for {day_name}:\n" + "\n".join(busy_times)
 
 def book_meeting(date_time_iso: str, name: str = "User", timezone_name: str = "UTC", user_email: str = None, guest_emails: str = "", duration_mins: int = 30, user_id: int = None, title: str = None) -> str:
@@ -294,7 +292,7 @@ def book_meeting(date_time_iso: str, name: str = "User", timezone_name: str = "U
             alternates = find_alternate_slots(service, start_time, user_tz, calendar_id)
             alt_msg = ""
             if alternates:
-                alt_lines = [f"  • {alt.strftime('%A, %b %d at %I:%M %p')}" for alt in alternates]
+                alt_lines = [f"  * {alt.strftime('%A, %b %d at %I:%M %p')}" for alt in alternates]
                 alt_msg = "\n\nSuggested available slots:\n" + "\n".join(alt_lines)
             return f"Cannot book meeting at {start_time.strftime('%I:%M %p')} because that slot is busy." + alt_msg
 
@@ -332,7 +330,7 @@ def book_meeting(date_time_iso: str, name: str = "User", timezone_name: str = "U
                 meet_link = entry.get('uri')
                 break
                 
-        print(f"✅ GOOGLE CALENDAR BOOKING SUCCESS: {event_result.get('htmlLink')}")
+        print(f"[OK] GOOGLE CALENDAR BOOKING SUCCESS: {event_result.get('htmlLink')}")
         
         msg = f"Success! Meeting '{event_title}' booked for {start_time.strftime('%A, %b %d at %I:%M %p')} ({timezone_name})."
         if meet_link:
@@ -340,7 +338,7 @@ def book_meeting(date_time_iso: str, name: str = "User", timezone_name: str = "U
         return msg
 
     except Exception as gcal_err:
-        print(f"⚠️ Google Calendar API unauthenticated/failed ({gcal_err}). Saving to local database.")
+        print(f"[WARN] Google Calendar API unauthenticated/failed ({gcal_err}). Saving to local database.")
         meet_link = f"https://meet.google.com/nov-{secrets.token_hex(4)}"
         st_str = start_time.strftime('%Y-%m-%d %H:%M')
         et_str = end_time.strftime('%Y-%m-%d %H:%M')
@@ -408,7 +406,7 @@ def send_email(to: str, subject: str, body: str, user_email: str = None, user_id
         print(f"[GMAIL SEND SUCCESS]: {send_result.get('id')}")
         return f"Successfully sent email to {to}."
     except Exception as gmail_err:
-        print(f"⚠️ Gmail API notice ({gmail_err}). Attempting SMTP fallback...")
+        print(f"[WARN] Gmail API notice ({gmail_err}). Attempting SMTP fallback...")
 
     # 2. Fallback to SMTP Email
     html_body = f"""<div style="font-family:sans-serif; padding:20px; line-height:1.6; background:#0b0f19; color:#f3f4f6; border-radius:12px;">

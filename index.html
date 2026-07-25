@@ -551,7 +551,7 @@ async function handleAuthSubmit(e) {
     const ep = activeTab==='login' ? '/api/login' : '/api/register';
     const body = activeTab==='login' ? {email,password} : {email,password,phone_number:phone};
     try {
-        const res = await fetch('http://127.0.0.1:5000'+ep, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        const res = await fetch(ep, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
         const data = await res.json();
         if (data.error) return alert(data.error);
         currentUser = data.user;
@@ -579,14 +579,14 @@ function loadUserProfile() {
 
 function triggerGoogleAuth() {
     if (currentUser) {
-        window.location.href = 'http://127.0.0.1:5000/auth/login?user_id=' + currentUser.id;
+        window.location.href = '/auth/login?user_id=' + currentUser.id;
     }
 }
 
 async function checkGoogleSyncStatus() {
     if (!currentUser) return;
     try {
-        const res = await fetch(`http://127.0.0.1:5000/api/auth_status?user_id=${currentUser.id}&email=${currentUser.email}`);
+        const res = await fetch(`/api/auth_status?user_id=${currentUser.id}&email=${currentUser.email}`);
         const data = await res.json();
         const badge = document.getElementById('googleSyncBadge');
         const badgeText = document.getElementById('syncBadgeText');
@@ -687,14 +687,14 @@ function flushBufs() {
 
 async function logConv(speaker, text) {
     if (!sessionId || !text.trim() || !currentUser) return;
-    try { await fetch('http://127.0.0.1:5000/api/log_conversation', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId,speaker,text,user_id:currentUser.id})}); }
+    try { await fetch('/api/log_conversation', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId,speaker,text,user_id:currentUser.id})}); }
     catch(e) { console.error(e); }
 }
 
 async function fetchHistory() {
     if (!currentUser) return;
     try {
-        const res = await fetch('http://127.0.0.1:5000/api/history?user_id='+currentUser.id);
+        const res = await fetch('/api/history?user_id='+currentUser.id);
         const hist = await res.json();
         UI.historyList.innerHTML = '';
         if (!hist.length) { UI.historyList.innerHTML = "<div class='msg system' style='padding:0'>No calls yet.</div>"; return; }
@@ -709,7 +709,7 @@ async function fetchHistory() {
 
 async function fetchSessionChat(sId) {
     try {
-        const res = await fetch('http://127.0.0.1:5000/api/history/session?session_id='+sId);
+        const res = await fetch('/api/history/session?session_id='+sId);
         const chat = await res.json();
         UI.transcript.innerHTML = "<div class='msg system'>Past call: "+sId+"</div>";
         chat.forEach(t => addMsg(t[1], t[0]==='user' ? 'user' : 'ai', false));
@@ -939,10 +939,12 @@ UI.callBtn.addEventListener('click', async () => {
         updateStatus('Listening...', 'live');
         addMsg('Connecting to voice agent...', 'system');
         const key = localStorage.getItem('gemini_api_key');
-        ws = new WebSocket('ws://localhost:5001/?user_id='+currentUser.id+'&key='+key);
+        const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsHost = (window.location.port === '5000' || window.location.port === '8000') ? window.location.hostname + ':5001' : window.location.host;
+        ws = new WebSocket(wsProto + '//' + wsHost + '/?user_id=' + currentUser.id + '&key=' + key);
         ws.onopen = async () => {
             let mem = 'No past memory found.';
-            try { const r = await fetch('http://127.0.0.1:5000/api/get_memory?user_id='+currentUser.id); const d = await r.json(); mem = d.context; }
+            try { const r = await fetch('/api/get_memory?user_id='+currentUser.id); const d = await r.json(); mem = d.context; }
             catch(e) { console.error(e); }
             const dt = new Date().toString(), tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
             const sp = 'You are Sandra, a premium AI voice assistant.\nToday: '+dt+'. Timezone: '+tz+'.\n'+mem+'\nTools: update_user_memory, send_email, add_todo, check_availability, book_meeting (with Google Meet video link), web_search.';
@@ -990,7 +992,7 @@ UI.callBtn.addEventListener('click', async () => {
                 const call = msg.toolCall.functionCalls[0];
                 addTool(call.name+'()\n'+JSON.stringify(call.args,null,2));
                 try {
-                    const r = await fetch('http://127.0.0.1:5000/api/tool_call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tool_name:call.name,tool_args:call.args,user_id:currentUser.id})});
+                    const r = await fetch('/api/tool_call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tool_name:call.name,tool_args:call.args,user_id:currentUser.id})});
                     const result = await r.json();
                     ws.send(JSON.stringify({toolResponse:{functionResponses:[{id:call.id,name:call.name,response:{result:JSON.stringify(result)}}]}}));
                 } catch(err) {
@@ -1092,7 +1094,7 @@ async function summarize() {
     if (!sessionId||!currentUser) return;
     addMsg('Saving summary...','system');
     try {
-        const r = await fetch('http://127.0.0.1:5000/api/summarize_and_email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId,user_id:currentUser.id})});
+        const r = await fetch('/api/summarize_and_email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId,user_id:currentUser.id})});
         const d = await r.json(); addMsg(d.result,'system'); fetchHistory();
     } catch(e) { addMsg('Summary failed.','system'); }
 }
@@ -1123,7 +1125,7 @@ window.addEventListener('online', () => { UI.networkAlert.classList.add('hidden'
 window.addEventListener('offline', () => { UI.networkAlert.classList.remove('hidden'); updateStatus('Offline',''); });
 UI.triggerCellularBtn.addEventListener('click', async () => {
     if (!currentUser) return;
-    try { const r=await fetch('http://127.0.0.1:5000/api/trigger_phone_call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:currentUser.id,text_to_say:'Browser disconnected. Switching to cellular.'})}); const d=await r.json(); alert(d.result); UI.networkAlert.classList.add('hidden'); }
+    try { const r=await fetch('/api/trigger_phone_call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:currentUser.id,text_to_say:'Browser disconnected. Switching to cellular.'})}); const d=await r.json(); alert(d.result); UI.networkAlert.classList.add('hidden'); }
     catch(err) { alert('Failed: '+err); }
 });
 
@@ -1184,7 +1186,7 @@ document.getElementById('openDrawerBtn').addEventListener('click', () => documen
 document.getElementById('closeHistoryBtn').addEventListener('click', () => document.getElementById('historyDrawer').classList.remove('open'));
 document.getElementById('profileTrigger').addEventListener('click', e => { e.stopPropagation(); document.getElementById('profileMenu').classList.toggle('open'); });
 document.addEventListener('click', e => { if(!document.getElementById('profileMenu').contains(e.target)) document.getElementById('profileMenu').classList.remove('open'); });
-document.getElementById('googleAuthBtn').addEventListener('click', () => { if(currentUser) window.location.href='http://127.0.0.1:5000/auth/login?user_id='+currentUser.id; });
+document.getElementById('googleAuthBtn').addEventListener('click', () => { if(currentUser) window.location.href='/auth/login?user_id='+currentUser.id; });
 
 window.addEventListener('load', () => {
     let savedKey = localStorage.getItem('gemini_api_key');

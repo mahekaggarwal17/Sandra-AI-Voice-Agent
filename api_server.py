@@ -914,5 +914,6 @@ if __name__ == '__main__':
     proxy_thread = threading.Thread(target=start_websocket_proxy, daemon=True)
     proxy_thread.start()
     
-    print("[HTTP] Unified HTTP server running on http://localhost:5000", flush=True)
-    app.run(host="localhost", port=5000)
+    port = int(os.getenv("PORT", 5000))
+    print(f"[HTTP] Unified HTTP server running on http://0.0.0.0:{port}", flush=True)
+    app.run(host="0.0.0.0", port=port)
