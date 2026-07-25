@@ -86,16 +86,39 @@ def login():
 
 OAUTH_VERIFIERS = {}
 
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+def get_oauth_redirect_uri():
+    configured_uri = os.getenv("GOOGLE_API_REDIRECT_URI")
+    if configured_uri:
+        return configured_uri
+    scheme = 'https' if (request.headers.get('X-Forwarded-Proto') == 'https' or request.is_secure) else request.scheme
+    return f"{scheme}://{request.host}/auth/callback"
+
 @app.route('/auth/login')
 def auth_login():
     user_id = request.args.get('user_id')
     if not user_id:
         return "Missing user_id parameter", 400
         
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        return """
+        <div style="font-family:sans-serif; max-width:600px; margin:50px auto; padding:20px; border:1px solid #f87171; background:#fef2f2; border-radius:8px;">
+            <h2 style="color:#dc2626;">Google OAuth Not Configured</h2>
+            <p><strong>GOOGLE_CLIENT_ID</strong> or <strong>GOOGLE_CLIENT_SECRET</strong> is missing in your environment variables.</p>
+            <p>Sandra is currently running in <strong>Local Calendar Fallback Mode</strong>. All meetings scheduled by voice are saved 100% reliably in your local database with Google Meet links.</p>
+            <p>To enable live Google Calendar sync, add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to your environment variables.</p>
+            <a href="/" style="display:inline-block; padding:10px 18px; background:#4f46e5; color:white; border-radius:6px; text-decoration:none;">Back to Sandra AI</a>
+        </div>
+        """, 400
+        
     client_config = {
         "web": {
-            "client_id": os.getenv("GOOGLE_CLIENT_ID"),
-            "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+            "client_id": client_id,
+            "client_secret": client_secret,
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
         }
@@ -109,15 +132,15 @@ def auth_login():
     ]
     
     state = json.dumps({"user_id": int(user_id)})
+    redirect_uri = get_oauth_redirect_uri()
     
     flow = Flow.from_client_config(
         client_config,
         scopes=scopes,
-        redirect_uri=os.getenv("GOOGLE_API_REDIRECT_URI", "http://localhost:5000/auth/callback")
+        redirect_uri=redirect_uri
     )
     auth_url, _ = flow.authorization_url(prompt='consent', state=state, access_type='offline')
     
-    # Preserve PKCE code_verifier across request boundary
     if hasattr(flow, 'code_verifier') and flow.code_verifier:
         OAUTH_VERIFIERS[int(user_id)] = flow.code_verifier
         session['code_verifier'] = flow.code_verifier
@@ -136,10 +159,15 @@ def auth_callback():
     except Exception:
         return "Invalid state parameter", 400
         
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        return "Google OAuth credentials not configured", 400
+
     client_config = {
         "web": {
-            "client_id": os.getenv("GOOGLE_CLIENT_ID"),
-            "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+            "client_id": client_id,
+            "client_secret": client_secret,
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
         }
@@ -152,50 +180,70 @@ def auth_callback():
         'openid'
     ]
     
+    redirect_uri = get_oauth_redirect_uri()
     flow = Flow.from_client_config(
         client_config,
         scopes=scopes,
-        redirect_uri=os.getenv("GOOGLE_API_REDIRECT_URI", "http://localhost:5000/auth/callback")
+        redirect_uri=redirect_uri
     )
     
-    # Re-attach PKCE code_verifier if available
     code_verifier = session.get('code_verifier') or OAUTH_VERIFIERS.get(user_id)
     if code_verifier:
         flow.code_verifier = code_verifier
     
-    flow.fetch_token(authorization_response=request.url)
-    creds = flow.credentials
-    
-    token_dict = {
-        'token': creds.token,
-        'refresh_token': creds.refresh_token,
-        'token_uri': creds.token_uri,
-        'client_id': creds.client_id,
-        'client_secret': creds.client_secret,
-        'scopes': creds.scopes
-    }
-    database.save_oauth_token(user_id, token_dict)
-    
-    # Save token files locally as well
     try:
-        os.makedirs('tokens', exist_ok=True)
-        with open('token.json', 'w') as f:
-            f.write(creds.to_json())
-    except Exception as err:
-        print(f"Warning: could not write token.json: {err}")
-    
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8000")
-    
-    return f"""
-    <h2>Success!</h2>
-    <p>Google Account authenticated successfully.</p>
-    <p>You can close this window now or wait to be redirected...</p>
-    <script>
-        setTimeout(() => {{
-            window.location.href = "{frontend_url}/?auth_success=1";
-        }}, 3000);
-    </script>
-    """
+        auth_response_url = request.url
+        if (request.headers.get('X-Forwarded-Proto') == 'https' or redirect_uri.startswith('https')) and auth_response_url.startswith('http://'):
+            auth_response_url = auth_response_url.replace('http://', 'https://', 1)
+        
+        flow.fetch_token(authorization_response=auth_response_url)
+        creds = flow.credentials
+        
+        token_dict = {
+            'token': creds.token,
+            'refresh_token': creds.refresh_token,
+            'token_uri': creds.token_uri,
+            'client_id': creds.client_id,
+            'client_secret': creds.client_secret,
+            'scopes': creds.scopes
+        }
+        database.save_oauth_token(user_id, token_dict)
+        
+        try:
+            os.makedirs('tokens', exist_ok=True)
+            with open('token.json', 'w') as f:
+                f.write(creds.to_json())
+        except Exception as err:
+            print(f"Warning: could not write token.json: {err}")
+        
+        target_redirect = os.getenv("FRONTEND_URL") or (f"https://{request.host}" if (request.headers.get('X-Forwarded-Proto') == 'https' or request.is_secure) else f"{request.scheme}://{request.host}")
+        
+        return f"""
+        <div style="font-family:sans-serif; text-align:center; padding:50px;">
+            <h2 style="color:#10b981;">✅ Google Calendar Synced Successfully!</h2>
+            <p>Your Google Calendar is now connected to Sandra AI Voice Agent.</p>
+            <p>Redirecting back to Sandra AI in 3 seconds...</p>
+            <script>
+                setTimeout(() => {{
+                    window.location.href = "{target_redirect}/?auth_success=1";
+                }}, 3000);
+            </script>
+        </div>
+        """
+    except Exception as oauth_err:
+        print(f"[OAUTH ERROR] Callback failed: {oauth_err}")
+        return f"""
+        <div style="font-family:sans-serif; max-width:600px; margin:50px auto; padding:20px; border:1px solid #f87171; background:#fef2f2; border-radius:8px;">
+            <h2 style="color:#dc2626;">Google Calendar Sync Error</h2>
+            <p>Error details: <code>{str(oauth_err)}</code></p>
+            <p><strong>Common Fixes:</strong></p>
+            <ul>
+                <li>Ensure <code>{redirect_uri}</code> is added under <strong>Authorized redirect URIs</strong> in Google Cloud Console Credentials.</li>
+                <li>Verify your <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> are correct.</li>
+            </ul>
+            <a href="/" style="display:inline-block; padding:10px 18px; background:#4f46e5; color:white; border-radius:6px; text-decoration:none;">Back to Sandra AI</a>
+        </div>
+        """, 400
 
 @app.route('/api/auth_status')
 def auth_status():
