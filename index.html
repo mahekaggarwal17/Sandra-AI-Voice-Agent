@@ -940,8 +940,7 @@ UI.callBtn.addEventListener('click', async () => {
         addMsg('Connecting to voice agent...', 'system');
         const key = localStorage.getItem('gemini_api_key');
         const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsHost = (window.location.port === '5000' || window.location.port === '8000') ? window.location.hostname + ':5001' : window.location.host;
-        ws = new WebSocket(wsProto + '//' + wsHost + '/?user_id=' + currentUser.id + '&key=' + key);
+        ws = new WebSocket(wsProto + '//' + window.location.host + '/ws?user_id=' + currentUser.id + '&key=' + key);
         ws.onopen = async () => {
             let mem = 'No past memory found.';
             try { const r = await fetch('/api/get_memory?user_id='+currentUser.id); const d = await r.json(); mem = d.context; }

@@ -11,6 +11,7 @@ import urllib.parse
 import requests
 from flask import Flask, request, jsonify, redirect, session
 from flask_cors import CORS
+from flask_sock import Sock
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 import websockets
@@ -22,6 +23,7 @@ from notifications import send_smtp_email, build_meeting_email_html, trigger_twi
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "novavoice-super-secret-key-12345")
 CORS(app, supports_credentials=True)
+sock = Sock(app)
 
 # Allow HTTP traffic for local localhost testing
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -893,6 +895,73 @@ async def proxy_handler(websocket, path=None):
             print(f"Failed auto email summary: {sum_err}")
             
         await websocket.close()
+
+class FlaskSockWsAdapter:
+    def __init__(self, ws):
+        self.ws = ws
+    def __aiter__(self):
+        return self
+    async def __anext__(self):
+        try:
+            msg = await asyncio.to_thread(self.ws.receive)
+            if msg is None:
+                raise StopAsyncIteration
+            return msg
+        except Exception:
+            raise StopAsyncIteration
+    async def send(self, data):
+        await asyncio.to_thread(self.ws.send, data)
+    async def close(self, code=1000, reason=""):
+        try:
+            await asyncio.to_thread(self.ws.close)
+        except Exception:
+            pass
+
+@sock.route('/ws')
+def unified_ws_endpoint(ws):
+    user_id_val = request.args.get('user_id', '1')
+    api_key_val = request.args.get('key')
+    if not api_key_val or api_key_val in ["null", "undefined"]:
+        api_key_val = os.getenv("NVIDIA_API_KEY") or os.getenv("GEMINI_API_KEY")
+    
+    try:
+        user_id = int(user_id_val)
+    except Exception:
+        user_id = 1
+        
+    user = database.get_user_by_id(user_id)
+    user_email = user['email'] if user else "default_user"
+    session_id = f"session_{int(datetime.datetime.now().timestamp())}"
+    
+    adapter = FlaskSockWsAdapter(ws)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        if api_key_val and (api_key_val.startswith("nvapi-") or api_key_val.startswith("nv") or "nvidia" in api_key_val.lower()):
+            loop.run_until_complete(nvidia_proxy_handler(adapter, user_id, api_key_val, user_email, session_id))
+        else:
+            async def handle_gemini():
+                gemini_url = f"wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key={api_key_val}"
+                async with websockets.connect(gemini_url) as gemini_ws:
+                    async def client_to_gemini():
+                        try:
+                            async for message in adapter:
+                                await gemini_ws.send(message)
+                        except Exception as e:
+                            print(f"Proxy client_to_gemini exception: {e}")
+                    async def gemini_to_client():
+                        try:
+                            async for message in gemini_ws:
+                                await adapter.send(message)
+                        except Exception as e:
+                            print(f"Proxy gemini_to_client exception: {e}")
+                    await asyncio.gather(client_to_gemini(), gemini_to_client())
+            loop.run_until_complete(handle_gemini())
+    except Exception as e:
+        print(f"[SOCK PROXY] Exception: {e}")
+    finally:
+        loop.close()
 
 async def main_websocket_proxy():
     print("[PROXY] WSS proxy listener spawned on ws://0.0.0.0:5001", flush=True)
