@@ -1,3 +1,4 @@
+import re
 # api_server.py
 import os
 from dotenv import load_dotenv
@@ -750,55 +751,51 @@ async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_
             database.log_message(session_id, "user", user_text, user_id)
             messages.append({"role": "user", "content": user_text})
 
-            # Loop to handle turn and any subsequent tool call follow-ups
+            # Loop to handle tool calls and immediate AI follow-ups without waiting for the user
             while True:
                 def fetch_stream(q, loop):
-                    try:
-                        response = nvidia_session.post(
-                            "https://integrate.api.nvidia.com/v1/chat/completions",
-                            headers={
-                                "Authorization": f"Bearer {api_key}",
-                                "Content-Type": "application/json",
-                                "Accept": "text/event-stream"
-                            },
-                            json={
-                                "model": "meta/llama-3.1-8b-instruct",
-                                "messages": messages,
-                                "temperature": 0.4,
-                                "top_p": 0.9,
-                                "max_tokens": 150,
-                                "stream": True
-                            },
-                            stream=True,
-                            timeout=(10, 60)
-                        )
-                        if response.status_code != 200:
-                            err_text = f"NVIDIA API Error {response.status_code}: {response.text}"
-                            print(f"[NVIDIA PROXY] {err_text}")
-                            loop.call_soon_threadsafe(q.put_nowait, ("ERR", f"NVIDIA API Error {response.status_code}"))
+                        try:
+                            response = nvidia_session.post(
+                                "https://integrate.api.nvidia.com/v1/chat/completions",
+                                headers={
+                                    "Authorization": f"Bearer {api_key}",
+                                    "Content-Type": "application/json",
+                                    "Accept": "text/event-stream"
+                                },
+                                json={
+                                    "model": "meta/llama-3.1-8b-instruct",
+                                    "messages": messages,
+                                    "temperature": 0.4,
+                                    "top_p": 0.9,
+                                    "max_tokens": 150,
+                                    "stream": True
+                                },
+                                stream=True,
+                                timeout=(10, 60)
+                            )
+                            if response.status_code != 200:
+                                loop.call_soon_threadsafe(q.put_nowait, ("ERR", f"HTTP {response.status_code}: {response.text}"))
+                                return
+                            
+                            for line in response.iter_lines():
+                                if line:
+                                    decoded_line = line.decode('utf-8')
+                                    if decoded_line.startswith("data: "):
+                                        raw = decoded_line[6:]
+                                        if raw == "[DONE]" or raw.strip() == "[DONE]":
+                                            break
+                                        try:
+                                            obj = json.loads(raw)
+                                            delta = obj["choices"][0]["delta"].get("content", "")
+                                            if delta:
+                                                loop.call_soon_threadsafe(q.put_nowait, ("CHUNK", delta))
+                                        except Exception:
+                                            pass
+                        except Exception as err:
+                            print(f"[NVIDIA PROXY] Fetch error: {err}")
+                            loop.call_soon_threadsafe(q.put_nowait, ("ERR", str(err)))
+                        finally:
                             loop.call_soon_threadsafe(q.put_nowait, ("DONE", None))
-                            return
-
-                        for line in response.iter_lines():
-                            if not line:
-                                continue
-                            line_str = line.decode('utf-8')
-                            if line_str.startswith('data: '):
-                                raw = line_str[6:].strip()
-                                if raw == '[DONE]':
-                                    break
-                                try:
-                                    obj = json.loads(raw)
-                                    delta = obj["choices"][0]["delta"].get("content", "")
-                                    if delta:
-                                        loop.call_soon_threadsafe(q.put_nowait, ("CHUNK", delta))
-                                except Exception:
-                                    pass
-                    except Exception as err:
-                        print(f"[NVIDIA PROXY] Fetch error: {err}")
-                        loop.call_soon_threadsafe(q.put_nowait, ("ERR", str(err)))
-                    finally:
-                        loop.call_soon_threadsafe(q.put_nowait, ("DONE", None))
 
                 q = asyncio.Queue()
                 loop = asyncio.get_running_loop()
@@ -849,12 +846,16 @@ async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_
                                 print(f"[NVIDIA TOOL EXECUTED] {fn_name} -> {tool_res}")
                                 clean_tool_res = re.sub(r'\[Event ID:[\s\S]*?\]', '', str(tool_res))
                                 messages.append({"role": "user", "content": f"Tool Execution Result ({fn_name}): {clean_tool_res}\nInstruction: Speak ONLY a warm, human 1-2 sentence spoken confirmation. Do NOT read codes, event IDs, brackets, or technical syntax out loud."})
+                                # We have a tool call, so we continue the while True loop to fetch the AI's confirmation
                                 continue
                         except Exception as te:
                             print(f"[NVIDIA TOOL ERROR] {te}")
-
-                await websocket.send(json.dumps({"serverContent": {"turnComplete": True}}))
+                
+                # If we reach here, there are no more tool calls for this turn
                 break
+            
+            # Signal the frontend that the AI turn is fully complete (triggers TTS)
+            await websocket.send(json.dumps({"serverContent": {"turnComplete": True}}))
 
     except Exception as ws_err:
         print(f"[NVIDIA PROXY] WSS Exception: {ws_err}")
