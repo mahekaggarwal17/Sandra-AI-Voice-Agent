@@ -986,7 +986,6 @@ UI.callBtn.addEventListener('click', async () => {
         };
         let aiTurnTtsText = "";
         let hasBinaryAudio = false;
-        let shouldAutoEndCall = false;
 
         ws.onmessage = async e => {
             const msg = JSON.parse(e.data);
@@ -1004,20 +1003,14 @@ UI.callBtn.addEventListener('click', async () => {
             if (msg.serverContent) {
                 const c = msg.serverContent;
                 if (c.inputTranscription&&c.inputTranscription.text) {
-                    shouldAutoEndCall = false;
                     const uTxt = c.inputTranscription.text.toLowerCase().trim();
-                    const donePhrases = ["nothing else", "that's all", "thats all", "no thanks", "i'm done", "im done", "goodbye", "bye", "hang up", "end call", "end session", "nothing else needed", "all set"];
-                    if (donePhrases.some(p => uTxt.includes(p))) {
-                        shouldAutoEndCall = true;
-                    }
                     addMsg(c.inputTranscription.text,'user',true);
+                    if (uTxt === 'hang up' || uTxt === 'end call' || uTxt === 'end session') {
+                        setTimeout(() => stopCall(), 1200);
+                    }
                 }
                 if (c.outputTranscription&&c.outputTranscription.text) {
-                    let chunkText = c.outputTranscription.text;
-                    if (chunkText.includes('[END_CALL]')) {
-                        shouldAutoEndCall = true;
-                        chunkText = chunkText.replace(/\[END_CALL\]/g, '');
-                    }
+                    let chunkText = c.outputTranscription.text.replace(/\[END_CALL\]/g, '');
                     if (chunkText) {
                         updateStatus('Agent Speaking...','speaking');
                         addMsg(chunkText,'ai',true);
@@ -1037,20 +1030,11 @@ UI.callBtn.addEventListener('click', async () => {
                     activeBubble=null;
 
                     const textToSpeak = aiTurnTtsText.trim();
-                    const willEndCall = shouldAutoEndCall;
-                    
                     aiTurnTtsText = "";
                     hasBinaryAudio = false;
-                    shouldAutoEndCall = false;
 
                     if (!hasBinaryAudio && textToSpeak) {
-                        speakText(textToSpeak, () => {
-                            if (willEndCall) {
-                                setTimeout(() => stopCall(), 600);
-                            }
-                        });
-                    } else if (willEndCall) {
-                        setTimeout(() => stopCall(), 800);
+                        speakText(textToSpeak);
                     }
 
                     // fade caption out after 3.5s of silence

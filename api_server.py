@@ -959,32 +959,43 @@ async def proxy_handler(websocket, path=None):
 class FlaskSockWsAdapter:
     def __init__(self, ws):
         self.ws = ws
+        self.closed = False
+        
     def __aiter__(self):
         return self
+        
     async def __anext__(self):
-        while True:
+        while not self.closed:
             try:
-                msg = await asyncio.to_thread(self.ws.receive, timeout=25)
+                msg = await asyncio.to_thread(self.ws.receive)
                 if msg is None:
+                    self.closed = True
                     raise StopAsyncIteration
                 if msg == "" or msg == "ping" or msg == "pong":
                     continue
                 return msg
+            except StopAsyncIteration:
+                raise StopAsyncIteration
             except Exception as e:
                 err_str = str(e).lower()
-                if "timeout" in err_str or "timed out" in err_str:
-                    try:
-                        await asyncio.to_thread(self.ws.send, json.dumps({"ping": True}))
-                    except Exception:
-                        pass
-                    continue
-                raise StopAsyncIteration
+                if "closed" in err_str or "aborted" in err_str or "bad file descriptor" in err_str or "broken pipe" in err_str:
+                    self.closed = True
+                    raise StopAsyncIteration
+                # Non-fatal timeout or read glitch - pause briefly and continue listening
+                await asyncio.sleep(0.1)
+                continue
+        raise StopAsyncIteration
+
     async def send(self, data):
+        if self.closed:
+            return
         try:
             await asyncio.to_thread(self.ws.send, data)
         except Exception as e:
-            print(f"[WS SEND ERROR] {e}")
+            print(f"[WS SEND WARNING] {e}")
+
     async def close(self, code=1000, reason=""):
+        self.closed = True
         try:
             await asyncio.to_thread(self.ws.close)
         except Exception:
