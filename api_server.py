@@ -809,27 +809,24 @@ async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_
                     kind, val = await q.get()
                     if kind == "CHUNK":
                         full_ai_response += val
-                        if "[TOOL_CALL:" not in full_ai_response and not val.strip().startswith("[TOOL"):
-                            await websocket.send(json.dumps({
-                                "serverContent": {
-                                    "outputTranscription": {"text": val},
-                                    "modelTurn": {"parts": [{"text": val}]}
-                                }
-                            }))
                     elif kind == "ERR":
-                        await websocket.send(json.dumps({
-                            "serverContent": {
-                                "outputTranscription": {"text": f" [{val}] "},
-                                "modelTurn": {"parts": [{"text": str(val)}]}
-                            }
-                        }))
+                        pass
                     elif kind == "DONE":
                         break
 
-                if "[TOOL_CALL:" not in full_ai_response:
-                    await websocket.send(json.dumps({"serverContent": {"turnComplete": True}}))
-
                 if full_ai_response:
+                    clean_spoken = re.sub(r'\[TOOL_CALL:[\s\S]*?\]', '', full_ai_response).strip()
+                    clean_spoken = re.sub(r'\[Event ID:[\s\S]*?\]', '', clean_spoken).strip()
+                    clean_spoken = re.sub(r'\{[\s\S]*?\}', '', clean_spoken).strip()
+
+                    if clean_spoken:
+                        await websocket.send(json.dumps({
+                            "serverContent": {
+                                "outputTranscription": {"text": clean_spoken},
+                                "modelTurn": {"parts": [{"text": clean_spoken}]}
+                            }
+                        }))
+
                     messages.append({"role": "assistant", "content": full_ai_response})
                     database.log_message(session_id, "model", full_ai_response, user_id)
 
@@ -843,11 +840,13 @@ async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_
                                 raw_args = raw_call[len(fn_name)+1:-1].strip() if "(" in raw_call and raw_call.endswith(")") else "{}"
                                 tool_res = execute_tool(fn_name, raw_args, user_id)
                                 print(f"[NVIDIA TOOL EXECUTED] {fn_name} -> {tool_res}")
-                                messages.append({"role": "user", "content": f"Tool Execution Result ({fn_name}): {tool_res}\nSpeak a warm, concise 1-2 sentence spoken confirmation to the user."})
-                                # Loop again to fetch follow-up verbal response after tool completion
+                                clean_tool_res = re.sub(r'\[Event ID:[\s\S]*?\]', '', str(tool_res))
+                                messages.append({"role": "user", "content": f"Tool Execution Result ({fn_name}): {clean_tool_res}\nInstruction: Speak ONLY a warm, human 1-2 sentence spoken confirmation. Do NOT read codes, event IDs, brackets, or technical syntax out loud."})
                                 continue
                         except Exception as te:
                             print(f"[NVIDIA TOOL ERROR] {te}")
+
+                await websocket.send(json.dumps({"serverContent": {"turnComplete": True}}))
                 break
 
     except Exception as ws_err:
@@ -956,15 +955,28 @@ class FlaskSockWsAdapter:
     def __aiter__(self):
         return self
     async def __anext__(self):
-        try:
-            msg = await asyncio.to_thread(self.ws.receive)
-            if msg is None:
+        while True:
+            try:
+                msg = await asyncio.to_thread(self.ws.receive, timeout=25)
+                if msg is None:
+                    raise StopAsyncIteration
+                if msg == "" or msg == "ping" or msg == "pong":
+                    continue
+                return msg
+            except Exception as e:
+                err_str = str(e).lower()
+                if "timeout" in err_str or "timed out" in err_str:
+                    try:
+                        await asyncio.to_thread(self.ws.send, json.dumps({"ping": True}))
+                    except Exception:
+                        pass
+                    continue
                 raise StopAsyncIteration
-            return msg
-        except Exception:
-            raise StopAsyncIteration
     async def send(self, data):
-        await asyncio.to_thread(self.ws.send, data)
+        try:
+            await asyncio.to_thread(self.ws.send, data)
+        except Exception as e:
+            print(f"[WS SEND ERROR] {e}")
     async def close(self, code=1000, reason=""):
         try:
             await asyncio.to_thread(self.ws.close)
