@@ -949,7 +949,7 @@ UI.callBtn.addEventListener('click', async () => {
             try { const r = await fetch('/api/get_memory?user_id='+currentUser.id); const d = await r.json(); mem = d.context; }
             catch(e) { console.error(e); }
             const dt = new Date().toString(), tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            const sp = 'You are Sandra, a premium AI voice assistant.\nToday: '+dt+'. Timezone: '+tz+'.\n'+mem+'\nTools: update_user_memory, send_email, add_todo, check_availability, book_meeting (with Google Meet video link), web_search.\nRule: When the user indicates they are finished or say nothing else is needed, give a warm 1-sentence farewell and append [END_CALL] at the very end of your response.';
+            const sp = 'You are Sandra, a premium AI voice assistant.\nToday: '+dt+'. Timezone: '+tz+'.\n'+mem+'\nTools: update_user_memory, send_email, add_todo, check_availability, book_meeting (with Google Meet video link), web_search.\nRule: Do NOT append [END_CALL] while answering questions or performing tasks. ONLY append [END_CALL] if the user explicitly orders you to "hang up" or "end call".';
             ws.send(JSON.stringify({setup:{
                 model:'models/gemini-2.0-flash-exp',
                 generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:UI.voiceConfig.value}}},thinkingConfig:{thinkingLevel:'MINIMAL'}},
@@ -1004,8 +1004,8 @@ UI.callBtn.addEventListener('click', async () => {
             if (msg.serverContent) {
                 const c = msg.serverContent;
                 if (c.inputTranscription&&c.inputTranscription.text) {
-                    const uTxt = c.inputTranscription.text.toLowerCase();
-                    if (uTxt.includes('nothing else') || uTxt.includes('that\'s all') || uTxt.includes('thats all') || uTxt.includes('no thanks') || uTxt.includes('i\'m done') || uTxt.includes('im done') || uTxt.includes('goodbye') || uTxt.includes('bye')) {
+                    const uTxt = c.inputTranscription.text.toLowerCase().trim();
+                    if (uTxt === 'hang up' || uTxt === 'end call' || uTxt === 'end session' || uTxt === 'goodbye sandra') {
                         shouldAutoEndCall = true;
                     }
                     addMsg(c.inputTranscription.text,'user',true);
