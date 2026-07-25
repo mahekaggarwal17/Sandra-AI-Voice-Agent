@@ -279,11 +279,14 @@ def execute_tool(name, args, user_id):
     elif not isinstance(args, dict):
         args = {}
 
+    import time
+    local_tz = time.tzname[time.daylight] if time.daylight else time.tzname[0]
+    
     if name == 'book_meeting':
         return calendar_tool.book_meeting(
             date_time_iso=args.get('date_time') or args.get('date_time_iso') or args.get('date'), 
             name=args.get('guest_email') or args.get('name') or 'User',
-            timezone_name=args.get('timezone', 'UTC'),
+            timezone_name=args.get('timezone', local_tz),
             guest_emails=args.get('guest_emails', ''),
             duration_mins=int(args.get('duration', 30)),
             user_id=user_id,
@@ -293,7 +296,7 @@ def execute_tool(name, args, user_id):
         date_val = args.get('date') or args.get('date_iso') or args.get('date_time') or 'today'
         return calendar_tool.check_availability(
             date_iso=date_val,
-            timezone_name=args.get('timezone', 'UTC'),
+            timezone_name=args.get('timezone', local_tz),
             user_id=user_id
         )
     elif name == 'send_email':
@@ -696,15 +699,24 @@ import requests
 
 async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_id):
     print(f"[NVIDIA PROXY] Connected user {user_id}. Starting Session: {session_id}")
+    import time
+    local_tz = time.tzname[time.daylight] if time.daylight else time.tzname[0]
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sys_instruction = (
         "You are Sandra, a warm, professional, intelligent AI voice assistant.\n"
+        f"The current local date and time is {now_str}, and your timezone is {local_tz}. Use this for all scheduling.\n"
         "Rules:\n"
         "1. Speak naturally in concise, conversational sentences (1-2 sentences) ideal for text-to-speech.\n"
         "2. NEVER read technical code lines, JSON brackets, event IDs, format symbols, or function syntax out loud.\n"
         "3. When you need to perform an action (check calendar, book meeting, send email, add task, save memory), write [TOOL_CALL: function_name({\"arg\": \"value\"})].\n"
-        "4. Available tools: check_availability, book_meeting, send_email, add_todo, update_user_memory, web_search.\n"
-        "5. ONLY append [END_CALL] to hang up the phone. If you decide to end the conversation or the user says goodbye, you MUST say 'have a great day' and append [END_CALL]. Never hang up without saying 'have a great day'."
+        "4. Available tools (ALWAYS use valid JSON args):\n"
+        "   - check_availability({\"date_iso\": \"YYYY-MM-DD or tomorrow/today\"})\n"
+        "   - book_meeting({\"date\": \"YYYY-MM-DD\", \"time\": \"HH:MM AM/PM\", \"duration\": 30, \"title\": \"...\"})\n"
+        "   - send_email({\"to_email\": \"...\", \"subject\": \"...\", \"body\": \"...\"})\n"
+        "   - add_todo({\"task\": \"...\", \"due_date\": \"YYYY-MM-DD\"})\n"
+        "   - update_user_memory({\"fact\": \"...\"})\n"
+        "   - web_search({\"query\": \"...\"})\n"
+        "5. ONLY append [END_CALL] if you are completely finished with the conversation and want to hang up. If you append [END_CALL], you MUST also say 'have a great day' in the same response. Never hang up without saying 'have a great day'."
     )
     try:
         context = database.get_profile_context(user_id)
@@ -845,7 +857,7 @@ async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_
                                 tool_res = execute_tool(fn_name, raw_args, user_id)
                                 print(f"[NVIDIA TOOL EXECUTED] {fn_name} -> {tool_res}")
                                 clean_tool_res = re.sub(r'\[Event ID:[\s\S]*?\]', '', str(tool_res))
-                                messages.append({"role": "user", "content": f"Tool Execution Result ({fn_name}): {clean_tool_res}\nInstruction: Speak ONLY a warm, human 1-2 sentence spoken confirmation. Do NOT read codes, event IDs, brackets, or technical syntax out loud."})
+                                messages.append({"role": "user", "content": f"Tool Result ({fn_name}): {clean_tool_res}\nProvide a warm, human 1-2 sentence conversational response based on this result. Do NOT repeat what you said before the tool call. Do NOT output technical syntax."})
                                 # We have a tool call, so we continue the while True loop to fetch the AI's confirmation
                                 continue
                         except Exception as te:
