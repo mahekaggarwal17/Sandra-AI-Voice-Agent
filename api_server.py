@@ -91,9 +91,9 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 def get_oauth_redirect_uri():
     configured_uri = os.getenv("GOOGLE_API_REDIRECT_URI")
-    if configured_uri:
+    if configured_uri and "your-app-name" not in configured_uri and "example.com" not in configured_uri:
         return configured_uri
-    scheme = 'https' if (request.headers.get('X-Forwarded-Proto') == 'https' or request.is_secure) else request.scheme
+    scheme = 'https' if (request.headers.get('X-Forwarded-Proto') == 'https' or request.is_secure or 'onrender.com' in request.host) else request.scheme
     return f"{scheme}://{request.host}/auth/callback"
 
 @app.route('/auth/login')
