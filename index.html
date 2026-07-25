@@ -1006,7 +1006,8 @@ UI.callBtn.addEventListener('click', async () => {
                 if (c.inputTranscription&&c.inputTranscription.text) {
                     shouldAutoEndCall = false;
                     const uTxt = c.inputTranscription.text.toLowerCase().trim();
-                    if (uTxt === 'hang up' || uTxt === 'end call' || uTxt === 'end session') {
+                    const donePhrases = ["nothing else", "that's all", "thats all", "no thanks", "i'm done", "im done", "goodbye", "bye", "hang up", "end call", "end session", "nothing else needed", "all set"];
+                    if (donePhrases.some(p => uTxt.includes(p))) {
                         shouldAutoEndCall = true;
                     }
                     addMsg(c.inputTranscription.text,'user',true);

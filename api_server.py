@@ -819,9 +819,12 @@ async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_
                     full_ai_response = "I am sorry, I encountered a temporary issue connecting to the AI service. Please try speaking again."
 
                 if full_ai_response:
+                    is_explicit_end = any(p in user_text.lower() for p in ["end call", "hang up", "end session", "nothing else", "that's all", "thats all", "no thanks", "bye", "goodbye", "i'm done", "im done", "all done"])
                     clean_spoken = re.sub(r'\[TOOL_CALL:[\s\S]*?\]', '', full_ai_response).strip()
                     clean_spoken = re.sub(r'\[Event ID:[\s\S]*?\]', '', clean_spoken).strip()
                     clean_spoken = re.sub(r'\{[\s\S]*?\}', '', clean_spoken).strip()
+                    if not is_explicit_end:
+                        clean_spoken = re.sub(r'\[END_CALL\]', '', clean_spoken).strip()
 
                     if clean_spoken:
                         await websocket.send(json.dumps({
