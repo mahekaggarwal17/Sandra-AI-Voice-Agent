@@ -865,7 +865,8 @@ function speakText(rawText, onEnd) {
     
     let clean = rawText
         .replace(/\[END_CALL\]/g, '')
-        .replace(/\[TOOL_CALL:[^\]]*\]/g, '')
+        .replace(/\[TOOL_CALL:[\s\S]*?\]/g, '')
+        .replace(/\[Event ID:[\s\S]*?\]/g, '')
         .replace(/https?:\/\/\S+/g, '')
         .replace(/[*#_~`>]+/g, '')
         .replace(/[\r\n]+/g, '. ')

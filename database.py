@@ -70,6 +70,21 @@ def init_db():
         )
     ''')
     
+    # 6. Local meetings table (for offline/unauthenticated local fallback)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS local_meetings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            title TEXT NOT NULL,
+            start_time TEXT NOT NULL,
+            end_time TEXT NOT NULL,
+            timezone TEXT,
+            guest_emails TEXT,
+            meet_link TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -246,3 +261,59 @@ def get_profile_context(user_id: int) -> str:
         profile_details.append(f"- {row['key']}: {row['value']}")
         
     return "PAST USER PROFILE & MEMORIES:\n" + "\n".join(profile_details)
+
+# Local Meetings Fallback CRUD
+def save_local_meeting(user_id: int, title: str, start_time: str, end_time: str, timezone: str, guest_emails: str = "", meet_link: str = ""):
+    init_db()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO local_meetings (user_id, title, start_time, end_time, timezone, guest_emails, meet_link) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        (user_id, title, start_time, end_time, timezone, guest_emails, meet_link)
+    )
+    conn.commit()
+    meeting_id = cursor.lastrowid
+    conn.close()
+    return meeting_id
+
+def get_local_meetings(user_id: int = None, date_prefix: str = None):
+    init_db()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query = 'SELECT * FROM local_meetings WHERE 1=1'
+    params = []
+    if user_id:
+        query += ' AND user_id = ?'
+        params.append(user_id)
+    if date_prefix:
+        query += ' AND start_time LIKE ?'
+        params.append(f"{date_prefix}%")
+    query += ' ORDER BY start_time ASC'
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def cancel_local_meeting(user_id: int = None, meeting_id_or_title: str = None):
+    init_db()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if not meeting_id_or_title:
+        return False
+    query = 'DELETE FROM local_meetings WHERE 1=1'
+    params = []
+    if user_id:
+        query += ' AND user_id = ?'
+        params.append(user_id)
+    if str(meeting_id_or_title).isdigit():
+        query += ' AND id = ?'
+        params.append(int(meeting_id_or_title))
+    else:
+        query += ' AND title LIKE ?'
+        params.append(f"%{meeting_id_or_title}%")
+    cursor.execute(query, params)
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
+

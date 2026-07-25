@@ -225,8 +225,8 @@ def execute_tool(name, args, user_id):
 
     if name == 'book_meeting':
         return calendar_tool.book_meeting(
-            date_time_iso=args.get('date_time') or args.get('date_time_iso'), 
-            name=args.get('guest_email', 'User'),
+            date_time_iso=args.get('date_time') or args.get('date_time_iso') or args.get('date'), 
+            name=args.get('guest_email') or args.get('name') or 'User',
             timezone_name=args.get('timezone', 'UTC'),
             guest_emails=args.get('guest_emails', ''),
             duration_mins=int(args.get('duration', 30)),
@@ -253,20 +253,22 @@ def execute_tool(name, args, user_id):
         )
     elif name == 'add_todo':
         return calendar_tool.add_todo(
-            title=args.get('title'),
-            due_date_iso=args.get('due_date') or args.get('due_date_iso'),
+            title=args.get('title', 'New Task'),
+            due_date_iso=args.get('due_date') or args.get('due_date_iso') or args.get('due'),
             user_id=user_id
         )
-    elif name == 'update_memory' or name == 'update_user_memory':
-        database.update_profile(user_id, args.get('key'), args.get('value'))
-        return f"Successfully saved {args.get('key')} = {args.get('value')} to memory."
+    elif name in ['update_memory', 'update_user_memory']:
+        key = args.get('key', 'info')
+        val = args.get('value', 'saved')
+        database.update_profile(user_id, key, val)
+        return f"Saved {key} to memory."
     elif name == 'cancel_meeting':
         return calendar_tool.cancel_meeting(
-            meeting_id_or_title=args.get('title') or args.get('meeting_id'),
+            event_id_or_title=args.get('title') or args.get('meeting_id') or args.get('event_id'),
             user_id=user_id
         )
     else:
-        return f"Tool {name} executed."
+        return f"Action {name} completed."
 
 @app.route('/api/tool_call', methods=['POST'])
 def handle_generic_tool_call():
@@ -640,12 +642,12 @@ async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_
     print(f"[NVIDIA PROXY] Connected user {user_id}. Starting Session: {session_id}")
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sys_instruction = (
-        "You are Sandra, a warm, intelligent, and proactive AI voice assistant.\n"
-        "Keep your responses concise, friendly, and natural for text-to-speech (1-3 sentences).\n"
-        "You have access to Google Calendar, Google Meet, and Gmail tools for the user.\n"
-        "When scheduling or setting up meetings via 'book_meeting', Google Meet video links are automatically generated and attached.\n"
-        "If you need to execute a tool, write [TOOL_CALL: function_name({\"arg\": \"value\"})].\n"
-        "Available tools: check_availability, book_meeting, send_email, add_todo, update_user_memory, web_search."
+        "You are Sandra, a warm, professional, intelligent AI voice assistant.\n"
+        "Rules:\n"
+        "1. Speak naturally in concise, conversational sentences (1-2 sentences) ideal for text-to-speech.\n"
+        "2. NEVER read technical code lines, JSON brackets, event IDs, format symbols, or function syntax out loud.\n"
+        "3. When you need to perform an action (check calendar, book meeting, send email, add task, save memory), write [TOOL_CALL: function_name({\"arg\": \"value\"})].\n"
+        "4. Available tools: check_availability, book_meeting, send_email, add_todo, update_user_memory, web_search."
     )
     try:
         context = database.get_profile_context(user_id)
@@ -751,12 +753,13 @@ async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_
                     kind, val = await q.get()
                     if kind == "CHUNK":
                         full_ai_response += val
-                        await websocket.send(json.dumps({
-                            "serverContent": {
-                                "outputTranscription": {"text": val},
-                                "modelTurn": {"parts": [{"text": val}]}
-                            }
-                        }))
+                        if "[TOOL_CALL:" not in full_ai_response and not val.strip().startswith("[TOOL"):
+                            await websocket.send(json.dumps({
+                                "serverContent": {
+                                    "outputTranscription": {"text": val},
+                                    "modelTurn": {"parts": [{"text": val}]}
+                                }
+                            }))
                     elif kind == "ERR":
                         await websocket.send(json.dumps({
                             "serverContent": {
@@ -767,7 +770,8 @@ async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_
                     elif kind == "DONE":
                         break
 
-                await websocket.send(json.dumps({"serverContent": {"turnComplete": True}}))
+                if "[TOOL_CALL:" not in full_ai_response:
+                    await websocket.send(json.dumps({"serverContent": {"turnComplete": True}}))
 
                 if full_ai_response:
                     messages.append({"role": "assistant", "content": full_ai_response})
@@ -783,7 +787,7 @@ async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_
                                 raw_args = raw_call[len(fn_name)+1:-1].strip() if "(" in raw_call and raw_call.endswith(")") else "{}"
                                 tool_res = execute_tool(fn_name, raw_args, user_id)
                                 print(f"[NVIDIA TOOL EXECUTED] {fn_name} -> {tool_res}")
-                                messages.append({"role": "user", "content": f"Tool Execution Result ({fn_name}): {tool_res}\nBriefly inform the user verbally."})
+                                messages.append({"role": "user", "content": f"Tool Execution Result ({fn_name}): {tool_res}\nSpeak a warm, concise 1-2 sentence spoken confirmation to the user."})
                                 # Loop again to fetch follow-up verbal response after tool completion
                                 continue
                         except Exception as te:
