@@ -704,7 +704,7 @@ async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_
         "2. NEVER read technical code lines, JSON brackets, event IDs, format symbols, or function syntax out loud.\n"
         "3. When you need to perform an action (check calendar, book meeting, send email, add task, save memory), write [TOOL_CALL: function_name({\"arg\": \"value\"})].\n"
         "4. Available tools: check_availability, book_meeting, send_email, add_todo, update_user_memory, web_search.\n"
-        "5. Do NOT append [END_CALL] while answering questions, booking meetings, sending emails, or checking calendar. ONLY append [END_CALL] if the user explicitly orders you to 'hang up', 'end call', or 'end session'."
+        "5. ONLY append [END_CALL] to hang up the phone. If you decide to end the conversation or the user says goodbye, you MUST say 'have a great day' and append [END_CALL]. Never hang up without saying 'have a great day'."
     )
     try:
         context = database.get_profile_context(user_id)

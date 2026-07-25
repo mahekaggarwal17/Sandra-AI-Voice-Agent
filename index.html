@@ -1012,11 +1012,20 @@ UI.callBtn.addEventListener('click', async () => {
                     }
                 }
                 if (c.outputTranscription&&c.outputTranscription.text) {
-                    let chunkText = c.outputTranscription.text.replace(/\[END_CALL\]/g, '');
+                    let rawText = c.outputTranscription.text;
+                    let shouldEndCall = /\[END_CALL\]/i.test(rawText) || /have a great day/i.test(rawText);
+                    let chunkText = rawText.replace(/\[END_CALL\]/gi, '');
+                    
                     if (chunkText) {
                         updateStatus('Agent Speaking...','speaking');
                         addMsg(chunkText,'ai',true);
                         aiTurnTtsText += chunkText;
+                    }
+                    
+                    if (shouldEndCall) {
+                        // Allow TTS enough time to say goodbye before stopping the call
+                        let ttsWaitTime = Math.max(3000, chunkText.length * 75);
+                        setTimeout(() => stopCall(), ttsWaitTime);
                     }
                 }
                 if (c.modelTurn) {
