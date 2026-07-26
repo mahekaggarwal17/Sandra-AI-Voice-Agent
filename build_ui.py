@@ -1063,12 +1063,47 @@ function getOrCreateAudioContext() {
     return audioContext;
 }
 
+let keepAliveOscillator = null;
+let keepAliveGain = null;
+
+function startKeepAliveAudio() {
+    if (!audioContext) return;
+    try {
+        if (keepAliveOscillator) return;
+        keepAliveOscillator = audioContext.createOscillator();
+        keepAliveGain = audioContext.createGain();
+        keepAliveOscillator.type = 'sine';
+        keepAliveOscillator.frequency.setValueAtTime(10, audioContext.currentTime);
+        keepAliveGain.gain.setValueAtTime(0.00001, audioContext.currentTime);
+        keepAliveOscillator.connect(keepAliveGain);
+        keepAliveGain.connect(audioContext.destination);
+        keepAliveOscillator.start();
+        console.log('[Mobile Web Audio] Continuous keep-alive oscillator active.');
+    } catch(e) {
+        console.warn('[Mobile Keep-Alive Notice]', e);
+    }
+}
+
+function stopKeepAliveAudio() {
+    if (keepAliveOscillator) {
+        try {
+            keepAliveOscillator.stop();
+            keepAliveOscillator.disconnect();
+        } catch(e) {}
+        keepAliveOscillator = null;
+        keepAliveGain = null;
+    }
+}
+
 let mobileAudioUnlocked = false;
 function unlockMobileAudio() {
     const ctx = getOrCreateAudioContext();
     if (!ctx) return;
     if (ctx.state === 'suspended') {
         ctx.resume().catch(() => {});
+    }
+    if (isCallActive) {
+        startKeepAliveAudio();
     }
     if (!mobileAudioUnlocked && ctx.state === 'running') {
         try {
@@ -1389,11 +1424,12 @@ UI.callBtn.addEventListener('click', async () => {
 
                     const textToSpeak = aiTurnTtsText.trim();
                     aiTurnTtsText = "";
-                    hasBinaryAudio = false;
 
-                    if (!hasBinaryAudio && textToSpeak) {
+                    let isWebAudioPlaybackActive = hasBinaryAudio && audioContext && audioContext.state === 'running' && activeSources.length > 0;
+                    if (!isWebAudioPlaybackActive && textToSpeak) {
                         speakText(textToSpeak);
                     }
+                    hasBinaryAudio = false;
 
                     // fade caption out after 3.5s of silence
                     captionFadeTimer = setTimeout(() => {
@@ -1416,6 +1452,7 @@ UI.callBtn.addEventListener('click', async () => {
 });
 
 function stopCall() {
+    stopKeepAliveAudio();
     if ('speechSynthesis' in window) {
         try { window.speechSynthesis.cancel(); } catch(err){}
     }
@@ -1426,6 +1463,7 @@ function stopCall() {
 let isCleaningUp = false;
 
 function cleanUp() {
+    stopKeepAliveAudio();
     if ('speechSynthesis' in window) {
         try { window.speechSynthesis.cancel(); } catch(err){}
     }
