@@ -1732,20 +1732,32 @@ function logout() {
 }
 
 window.addEventListener('load', () => {
-    let su = localStorage.getItem('user');
-    if (su) {
+    const saved = localStorage.getItem('user');
+    if (saved) {
         try {
-            currentUser = JSON.parse(su);
-            UI.authModal.classList.add('hidden');
+            currentUser = JSON.parse(saved);
             loadUserProfile();
         } catch(e) {
-            currentUser = null;
-            localStorage.removeItem('user');
-            UI.authModal.classList.remove('hidden');
+            currentUser = { id: 1, email: 'guest@sandra.ai', phone_number: '+15550199' };
+            localStorage.setItem('user', JSON.stringify(currentUser));
+            loadUserProfile();
         }
     } else {
-        currentUser = null;
-        UI.authModal.classList.remove('hidden');
+        currentUser = { id: 1, email: 'guest@sandra.ai', phone_number: '+15550199' };
+        localStorage.setItem('user', JSON.stringify(currentUser));
+        loadUserProfile();
+    }
+    if (UI.authModal) UI.authModal.classList.add('hidden');
+
+    const orbWrap = document.getElementById('orbWrap');
+    if (orbWrap) {
+        orbWrap.addEventListener('click', () => {
+            unlockMobileAudio();
+            if (UI.callBtn) UI.callBtn.click();
+        });
+        orbWrap.addEventListener('touchstart', () => {
+            unlockMobileAudio();
+        }, { passive: true });
     }
 
     enumerateMics();
