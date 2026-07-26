@@ -486,10 +486,6 @@
         <span id="statusText">Disconnected</span>
     </div>
     <div class="nav-right">
-        <div class="sync-badge wake-badge active" id="wakeWordBadge" onclick="toggleWakeWordManual()">
-            <div class="wake-dot"></div>
-            <span id="wakeWordBadgeText">Wake Word ("Hey Sandra")</span>
-        </div>
         <div class="sync-badge" id="googleSyncBadge" onclick="triggerGoogleAuth()">
             <div class="sync-dot"></div>
             <span id="syncBadgeText">Calendar Synced</span>
@@ -1240,8 +1236,10 @@ UI.callBtn.addEventListener('click', async () => {
     updateStatus('Listening...', 'live');
     addMsg('Connecting to voice agent...', 'system');
     
+    const userKey = (UI.geminiKey && UI.geminiKey.value.trim()) || localStorage.getItem('gemini_api_key') || '';
     const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(wsProto + '//' + window.location.host + '/ws?user_id=' + currentUser.id);
+    const wsUrl = wsProto + '//' + window.location.host + '/ws?user_id=' + currentUser.id + (userKey ? '&key=' + encodeURIComponent(userKey) : '');
+    ws = new WebSocket(wsUrl);
     let pingTimer = null;
 
     ws.onerror = (err) => {
@@ -1279,6 +1277,11 @@ UI.callBtn.addEventListener('click', async () => {
             let micConstraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } };
             if (UI.audioSource.value && UI.audioSource.value.length > 5 && UI.audioSource.value !== 'Loading...' && UI.audioSource.value !== 'default') {
                 micConstraints.audio.deviceId = { exact: UI.audioSource.value };
+            }
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                alert("Microphone access is blocked on mobile HTTP.\n\nMobile browsers require HTTPS or localhost to enable microphone recording.\n\nPlease open this site over HTTPS or access via localhost.");
+                addMsg("Microphone blocked: Mobile browsers require HTTPS or localhost for mic access.", "system");
+                return;
             }
             try {
                 mediaStream = await navigator.mediaDevices.getUserMedia(micConstraints);
