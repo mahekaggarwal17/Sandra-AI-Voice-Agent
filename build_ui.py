@@ -1452,7 +1452,7 @@ UI.callBtn.addEventListener('click', async () => {
                 }
                 if (c.outputTranscription&&c.outputTranscription.text) {
                     let rawText = c.outputTranscription.text;
-                    let shouldEndCall = /\[END_CALL\]/i.test(rawText) || /have a great day/i.test(rawText);
+                    let shouldEndCall = /\[END_CALL\]/i.test(rawText);
                     let chunkText = rawText.replace(/\[END_CALL\]/gi, '');
                     
                     if (chunkText) {
