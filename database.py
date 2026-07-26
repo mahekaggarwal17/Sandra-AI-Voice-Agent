@@ -182,6 +182,17 @@ def get_oauth_token(user_id: int) -> dict:
         return json.loads(row['token_json'])
     return None
 
+def get_any_valid_oauth_token() -> dict:
+    init_db()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT token_json FROM oauth_tokens LIMIT 1')
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return json.loads(row['token_json'])
+    return None
+
 # Conversation Logs CRUD
 def start_conversation(session_id: str, user_id: int = None):
     init_db()

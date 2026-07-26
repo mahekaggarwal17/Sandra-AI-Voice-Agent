@@ -13,7 +13,7 @@ import database
 import notifications
 
 def get_google_creds(user_email: str = None, user_id: int = None):
-    # 1. Try to load token from the database
+    # 1. Try to load token from database for specified user
     token_data = None
     try:
         if user_id:
@@ -23,7 +23,16 @@ def get_google_creds(user_email: str = None, user_id: int = None):
             if user:
                 token_data = database.get_oauth_token(user['id'])
     except Exception as db_err:
-        print(f"[WARN] Database token fetch failed: {db_err}. Falling back to file storage.")
+        print(f"[WARN] Database token fetch failed: {db_err}")
+
+    # 2. Host Calendar Mode: If specified user has no token, fall back to master host token in DB
+    if not token_data:
+        try:
+            token_data = database.get_any_valid_oauth_token()
+            if token_data:
+                print("[INFO] Host Calendar Mode: Using master Google OAuth token from database.")
+        except Exception:
+            pass
 
     if token_data:
         scopes = [
@@ -40,7 +49,7 @@ def get_google_creds(user_email: str = None, user_id: int = None):
             scopes=token_data.get('scopes', scopes)
         )
 
-    # 2. Fallback to file tokens
+    # 3. Fallback to file tokens
     os.makedirs('tokens', exist_ok=True)
     token_path = 'token.json'
     if user_email:
@@ -55,7 +64,7 @@ def get_google_creds(user_email: str = None, user_id: int = None):
             token_path = os.path.join('tokens', token_files[0])
         else:
             raise Exception("Google Account is not authenticated.")
-            
+
     scopes = [
         'https://www.googleapis.com/auth/calendar.events',
         'https://www.googleapis.com/auth/gmail.send',
@@ -297,11 +306,14 @@ def book_meeting(date_time_iso: str, name: str = "User", timezone_name: str = "U
             return f"Cannot book meeting at {start_time.strftime('%I:%M %p')} because that slot is busy." + alt_msg
 
         attendees = []
+        all_emails = set()
         if guest_emails:
             for g in guest_emails.split(','):
-                g_strip = g.strip()
-                if g_strip:
-                    attendees.append({'email': g_strip})
+                if g.strip(): all_emails.add(g.strip())
+        if user_email and '@' in user_email and not user_email.endswith('@novavoice.ai'):
+            all_emails.add(user_email.strip())
+        for em in all_emails:
+            attendees.append({'email': em})
 
         event = {
             'summary': event_title,
@@ -320,7 +332,8 @@ def book_meeting(date_time_iso: str, name: str = "User", timezone_name: str = "U
         event_result = service.events().insert(
             calendarId=calendar_id, 
             body=event,
-            conferenceDataVersion=1
+            conferenceDataVersion=1,
+            sendUpdates='all'
         ).execute()
         
         meet_link = ""
