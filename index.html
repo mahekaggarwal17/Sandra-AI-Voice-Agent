@@ -486,6 +486,10 @@
         <span id="statusText">Disconnected</span>
     </div>
     <div class="nav-right">
+        <div class="sync-badge wake-badge active" id="wakeWordBadge" onclick="toggleWakeWordManual()">
+            <div class="wake-dot"></div>
+            <span id="wakeWordBadgeText">Wake Word ("Hey Sandra")</span>
+        </div>
         <div class="sync-badge" id="googleSyncBadge" onclick="triggerGoogleAuth()">
             <div class="sync-dot"></div>
             <span id="syncBadgeText">Calendar Synced</span>
@@ -1344,6 +1348,7 @@ UI.callBtn.addEventListener('click', async () => {
             if (msg.serverContent) {
                 const c = msg.serverContent;
                 if (c.inputTranscription&&c.inputTranscription.text) {
+                    interruptPlayback();
                     const uTxt = c.inputTranscription.text.toLowerCase().trim();
                     addMsg(c.inputTranscription.text,'user',true);
                     if (uTxt === 'hang up' || uTxt === 'end call' || uTxt === 'end session') {
@@ -1465,6 +1470,17 @@ function ab2b64(buf) {
     return window.btoa(binary);
 }
 
+function interruptPlayback() {
+    activeSources.forEach(s => {
+        try { s.stop(); } catch(e) {}
+    });
+    activeSources = [];
+    nextPlayTime = 0;
+    if ('speechSynthesis' in window) {
+        try { window.speechSynthesis.cancel(); } catch(e) {}
+    }
+}
+
 function playB64(b64) {
     if (!audioContext) return;
     if (audioContext.state === 'suspended') {
@@ -1481,8 +1497,8 @@ function playB64(b64) {
     aiAnalyser.connect(audioContext.destination);
     
     const now = audioContext.currentTime;
-    if (nextPlayTime < now) {
-        nextPlayTime = now + 0.015; // 15ms buffer to eliminate audio queue lag
+    if (nextPlayTime < now || nextPlayTime > now + 0.12) {
+        nextPlayTime = now + 0.005; // 5ms zero-latency initial playback queue
     }
     src.start(nextPlayTime);
     nextPlayTime += ab.duration;
