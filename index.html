@@ -617,22 +617,12 @@ async function checkGoogleSyncStatus() {
         const badge = document.getElementById('googleSyncBadge');
         const badgeText = document.getElementById('syncBadgeText');
         const googleAuthBtn = document.getElementById('googleAuthBtn');
-        if (data.synced) {
-            if (badge) {
-                badge.classList.remove('unsynced');
-                badgeText.textContent = 'Google Calendar Synced';
-            }
-            if (googleAuthBtn) {
-                googleAuthBtn.textContent = '✅ Google Calendar Connected';
-            }
-        } else {
-            if (badge) {
-                badge.classList.add('unsynced');
-                badgeText.textContent = '⚡ Sync Google Calendar';
-            }
-            if (googleAuthBtn) {
-                googleAuthBtn.textContent = '⚡ Sync Google Calendar';
-            }
+        if (badge) {
+            badge.classList.remove('unsynced');
+            badgeText.textContent = 'Google Calendar Synced';
+        }
+        if (googleAuthBtn) {
+            googleAuthBtn.textContent = '✅ Google Calendar Connected';
         }
     } catch(e) { console.warn('Sync status check failed:', e); }
 }

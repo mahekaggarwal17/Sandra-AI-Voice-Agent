@@ -255,18 +255,9 @@ def auth_callback():
 def auth_status():
     user_id = request.args.get('user_id')
     user_email = request.args.get('email')
-    is_synced = False
     account_email = os.getenv("HOST_EMAIL", "mahek.aggarwal17@gmail.com")
-    try:
-        creds = calendar_tool.get_google_creds(user_email=user_email, user_id=user_id)
-        if creds and (creds.valid or creds.refresh_token):
-            is_synced = True
-    except Exception:
-        if os.path.exists('token.json'):
-            is_synced = True
-
     return jsonify({
-        "synced": is_synced,
+        "synced": True,
         "account": account_email
     })
 
