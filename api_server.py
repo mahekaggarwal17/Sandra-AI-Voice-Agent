@@ -891,11 +891,27 @@ async def proxy_handler(websocket, path=None):
         await nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_id)
         return
     
-    gemini_url = f"wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key={api_key}"
-    print(f"[PROXY] Connected user {user_id}. Starting WSS Session: {session_id}")
+    gemini_urls = [
+        f"wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key={api_key}",
+        f"wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key={api_key}"
+    ]
     
+    gemini_ws = None
+    for url in gemini_urls:
+        try:
+            gemini_ws = await websockets.connect(url)
+            print(f"[GEMINI CONNECTED] Session {session_id} connected using {url.split('?')[0]}", flush=True)
+            break
+        except Exception as conn_err:
+            print(f"[GEMINI CONNECT NOTICE] {url.split('?')[0]} notice: {conn_err}", flush=True)
+            
+    if not gemini_ws:
+        print(f"[GEMINI ERROR] Could not connect to Gemini Live API with key {api_key[:8]}...", flush=True)
+        await websocket.close(1008, "Gemini API Connection Failed")
+        return
+
     try:
-        async with websockets.connect(gemini_url) as gemini_ws:
+        async with gemini_ws:
             async def client_to_gemini():
                 try:
                     async for message in websocket:
@@ -1036,8 +1052,24 @@ def unified_ws_endpoint(ws):
             loop.run_until_complete(nvidia_proxy_handler(adapter, user_id, api_key_val, user_email, session_id))
         else:
             async def handle_gemini():
-                gemini_url = f"wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key={api_key_val}"
-                async with websockets.connect(gemini_url) as gemini_ws:
+                gemini_urls = [
+                    f"wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key={api_key_val}",
+                    f"wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key={api_key_val}"
+                ]
+                gemini_ws = None
+                for url in gemini_urls:
+                    try:
+                        gemini_ws = await websockets.connect(url)
+                        print(f"[GEMINI CONNECTED] Connected successfully using {url.split('?')[0]}", flush=True)
+                        break
+                    except Exception as conn_err:
+                        print(f"[GEMINI CONNECT NOTICE] {url.split('?')[0]} notice: {conn_err}", flush=True)
+                        
+                if not gemini_ws:
+                    print(f"[GEMINI ERROR] Could not connect to Gemini Live API with provided key.", flush=True)
+                    return
+
+                async with gemini_ws:
                     async def client_to_gemini():
                         try:
                             async for message in adapter:
@@ -1047,7 +1079,7 @@ def unified_ws_endpoint(ws):
                         except asyncio.CancelledError:
                             pass
                         except Exception as e:
-                            print(f"Proxy client_to_gemini exception: {e}")
+                            print(f"Proxy client_to_gemini exception: {e}", flush=True)
                     async def gemini_to_client():
                         try:
                             async for message in gemini_ws:
@@ -1055,7 +1087,7 @@ def unified_ws_endpoint(ws):
                         except asyncio.CancelledError:
                             pass
                         except Exception as e:
-                            print(f"Proxy gemini_to_client exception: {e}")
+                            print(f"Proxy gemini_to_client exception: {e}", flush=True)
                     t1 = asyncio.create_task(client_to_gemini())
                     t2 = asyncio.create_task(gemini_to_client())
                     done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
@@ -1107,17 +1139,25 @@ def generate_self_signed_cert(cert_file='cert.pem', key_file='key.pem'):
         return None, None
 
 if __name__ == '__main__':
-    proxy_thread = threading.Thread(target=start_websocket_proxy, daemon=True)
-    proxy_thread.start()
+    try:
+        proxy_thread = threading.Thread(target=start_websocket_proxy, daemon=True)
+        proxy_thread.start()
+    except Exception as e:
+        print(f"[PROXY Thread Notice] {e}", flush=True)
     
     port = int(os.getenv("PORT", 5000))
-    cert_f, key_f = generate_self_signed_cert()
-    ssl_context = (cert_f, key_f) if cert_f and key_f else None
+    is_render = os.getenv("RENDER") is not None or os.getenv("RENDER_SERVICE_ID") is not None
+    enable_local_ssl = os.getenv("ENABLE_LOCAL_SSL", "").lower() in ["true", "1", "yes"]
+    
+    ssl_context = None
+    if enable_local_ssl and not is_render:
+        cert_f, key_f = generate_self_signed_cert()
+        if cert_f and key_f:
+            ssl_context = (cert_f, key_f)
     
     if ssl_context:
-        print(f"[HTTPS] Unified HTTPS server running on https://0.0.0.0:{port}", flush=True)
-        print(f"[HTTPS MOBILE ACCESS] Open https://<YOUR_IP_ADDRESS>:{port} on your mobile phone for full mic access!", flush=True)
+        print(f"[HTTPS LOCAL] Unified HTTPS server running on https://0.0.0.0:{port}", flush=True)
         app.run(host="0.0.0.0", port=port, ssl_context=ssl_context)
     else:
-        print(f"[HTTP] Unified HTTP server running on http://0.0.0.0:{port}", flush=True)
+        print(f"[HTTP] Unified HTTP server running on http://0.0.0.0:{port} (Edge SSL enabled on Cloud Hosts)", flush=True)
         app.run(host="0.0.0.0", port=port)
