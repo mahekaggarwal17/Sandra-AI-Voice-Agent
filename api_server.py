@@ -279,8 +279,7 @@ def execute_tool(name, args, user_id):
     elif not isinstance(args, dict):
         args = {}
 
-    import time
-    local_tz = time.tzname[time.daylight] if time.daylight else time.tzname[0]
+    local_tz = "Asia/Kolkata"
     
     if name == 'book_meeting':
         return calendar_tool.book_meeting(
@@ -369,7 +368,7 @@ def handle_booking():
     result = calendar_tool.book_meeting(
         date_time_iso=data.get('date_time'), 
         name=data.get('guest_email', 'User'),
-        timezone_name=data.get('timezone', 'UTC'),
+        timezone_name=data.get('timezone', 'Asia/Kolkata'),
         guest_emails=data.get('guest_emails', ''),
         duration_mins=int(data.get('duration', 30)),
         user_id=uid,
@@ -394,7 +393,7 @@ def handle_booking():
             action="book",
             title=data.get('title', 'Meeting'),
             start_time_str=data.get('date_time'),
-            timezone=data.get('timezone', 'UTC'),
+            timezone=data.get('timezone', 'Asia/Kolkata'),
             meet_link=meet_link
         )
         
@@ -419,7 +418,7 @@ def handle_availability():
             
     result = calendar_tool.check_availability(
         date_iso=data.get('date'),
-        timezone_name=data.get('timezone', 'UTC'),
+        timezone_name=data.get('timezone', 'Asia/Kolkata'),
         user_id=uid
     )
     return jsonify({"result": result})
@@ -441,7 +440,7 @@ def handle_update_meeting():
     result = calendar_tool.update_meeting(
         event_id=data.get('event_id'),
         new_date_time_iso=data.get('new_date_time'),
-        timezone_name=data.get('timezone', 'UTC'),
+        timezone_name=data.get('timezone', 'Asia/Kolkata'),
         duration_mins=int(data.get('duration', 30)),
         user_id=uid
     )
@@ -456,7 +455,7 @@ def handle_update_meeting():
             action="update",
             title="Meeting Rescheduled",
             start_time_str=data.get('new_date_time'),
-            timezone=data.get('timezone', 'UTC')
+            timezone=data.get('timezone', 'Asia/Kolkata')
         )
         for email in set(emails_to_notify):
             send_smtp_email(email, "Meeting Rescheduled Notice", html_body)
@@ -700,7 +699,7 @@ import requests
 async def nvidia_proxy_handler(websocket, user_id, api_key, user_email, session_id):
     print(f"[NVIDIA PROXY] Connected user {user_id}. Starting Session: {session_id}")
     import time
-    local_tz = time.tzname[time.daylight] if time.daylight else time.tzname[0]
+    local_tz = "Asia/Kolkata"
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sys_instruction = (
         "You are Sandra, a warm, professional, intelligent AI voice assistant.\n"

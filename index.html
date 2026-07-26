@@ -765,9 +765,13 @@ function startSR() {
             if (f.trim()) {
                 if (speechTimer) clearTimeout(speechTimer);
                 sendSpeechText(f.trim());
+                try { recognition.stop(); } catch(err){}
             } else if (it.trim()) {
                 if (speechTimer) clearTimeout(speechTimer);
-                speechTimer = setTimeout(() => { sendSpeechText(it.trim()); }, 350);
+                speechTimer = setTimeout(() => { 
+                    sendSpeechText(it.trim()); 
+                    try { recognition.stop(); } catch(err){}
+                }, 1500);
             }
         };
         recognition.onerror = e => {
@@ -789,47 +793,86 @@ function startSR() {
 }
 
 let wakeWordRecognition = null;
+let wakeWordRestartTimer = null;
 
 function startWakeWordListener() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR || wakeWordRecognition || isCallActive) return;
+    if (!SR) {
+        console.warn('[WakeWord] SpeechRecognition is not supported in this browser.');
+        return;
+    }
+    if (wakeWordRecognition || isCallActive) return;
+
+    if (wakeWordRestartTimer) {
+        clearTimeout(wakeWordRestartTimer);
+        wakeWordRestartTimer = null;
+    }
+
     try {
-        wakeWordRecognition = new SR();
-        wakeWordRecognition.continuous = true;
-        wakeWordRecognition.interimResults = true;
-        wakeWordRecognition.lang = 'en-US';
-        wakeWordRecognition.onresult = e => {
+        const rec = new SR();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = 'en-US';
+
+        rec.onstart = () => {
+            console.log('[WakeWord] Listening active ("Hey Sandra")...');
+        };
+
+        rec.onresult = e => {
             if (isCallActive || isSpeakingTTS) return;
             let text = '';
             for (let i = e.resultIndex; i < e.results.length; i++) {
                 text += e.results[i][0].transcript;
             }
             const lower = text.toLowerCase();
-            if (lower.includes('hello sandra') || lower.includes('hey sandra') || lower.includes('hi sandra') || lower.includes('sandra')) {
-                console.log('[WAKE WORD DETECTED] "Hello Sandra"!');
+            if (/(hello|hey|hi|ok|okay)?\s*(sandra|sondra|saundra|shandra|chandra)/i.test(lower)) {
+                console.log('[WAKE WORD DETECTED] Transcript:', text);
                 stopWakeWordListener();
                 if (!isCallActive && currentUser) {
                     UI.callBtn.click();
                 }
             }
         };
-        wakeWordRecognition.onerror = e => {
-            if (e.error !== 'aborted') {
-                setTimeout(() => { if (!isCallActive) try{ wakeWordRecognition.start(); }catch(err){} }, 600);
+
+        rec.onerror = e => {
+            console.warn('[WakeWord Error]', e.error);
+            if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+                console.error('[WakeWord] Mic permission denied or unsupported.');
+                wakeWordRecognition = null;
+                return;
             }
         };
-        wakeWordRecognition.onend = () => {
+
+        rec.onend = () => {
+            wakeWordRecognition = null;
             if (!isCallActive) {
-                setTimeout(() => { if (!isCallActive) try{ wakeWordRecognition.start(); }catch(err){} }, 300);
+                wakeWordRestartTimer = setTimeout(() => {
+                    if (!isCallActive && !wakeWordRecognition) {
+                        startWakeWordListener();
+                    }
+                }, 500);
             }
         };
-        wakeWordRecognition.start();
-    } catch(err) {}
+
+        wakeWordRecognition = rec;
+        rec.start();
+    } catch(err) {
+        console.error('[WakeWord Exception]', err);
+        wakeWordRecognition = null;
+    }
 }
 
 function stopWakeWordListener() {
+    if (wakeWordRestartTimer) {
+        clearTimeout(wakeWordRestartTimer);
+        wakeWordRestartTimer = null;
+    }
     if (wakeWordRecognition) {
-        try { wakeWordRecognition.abort(); } catch(e) {}
+        try {
+            wakeWordRecognition.onend = null;
+            wakeWordRecognition.onerror = null;
+            wakeWordRecognition.abort();
+        } catch(e) {}
         wakeWordRecognition = null;
     }
 }
