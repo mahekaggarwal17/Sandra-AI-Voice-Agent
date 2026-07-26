@@ -1127,31 +1127,36 @@ document.addEventListener('click', async () => {
     }
 }, { passive: true });
 
-function resampleTo16kPCM(float32Array, inputSampleRate) {
-    const targetSampleRate = 16000;
-    if (inputSampleRate === targetSampleRate) {
-        const pcm16 = new Int16Array(float32Array.length);
-        for (let i = 0; i < float32Array.length; i++) {
-            const s = Math.max(-1, Math.min(1, float32Array[i]));
-            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-        }
-        return pcm16.buffer;
+let pcmAccumulator = [];
+
+function processAndSendMicAudio(float32Data, inputSampleRate) {
+    if (!isCallActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+    
+    // Mobile Echo Gate: Suppress sending mic PCM frames while Sandra is actively speaking
+    if (isSpeakingTTS || activeSources.length > 0) {
+        pcmAccumulator = [];
+        return;
     }
     
-    const ratio = inputSampleRate / targetSampleRate;
-    const newLength = Math.floor(float32Array.length / ratio);
-    const pcm16 = new Int16Array(newLength);
-    
-    for (let i = 0; i < newLength; i++) {
-        const originIndex = i * ratio;
-        const index1 = Math.floor(originIndex);
-        const index2 = Math.min(index1 + 1, float32Array.length - 1);
-        const weight = originIndex - index1;
-        const interpolated = float32Array[index1] * (1 - weight) + float32Array[index2] * weight;
-        const s = Math.max(-1, Math.min(1, interpolated));
-        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    const pcm16Buffer = resampleTo16kPCM(float32Data, inputSampleRate);
+    const i16Array = new Int16Array(pcm16Buffer);
+    for (let i = 0; i < i16Array.length; i++) {
+        pcmAccumulator.push(i16Array[i]);
     }
-    return pcm16.buffer;
+    
+    // Accumulate 1600 Int16 samples (100ms at 16kHz = 3200 bytes) per WebSocket packet
+    while (pcmAccumulator.length >= 1600) {
+        const frameSamples = pcmAccumulator.splice(0, 1600);
+        const frameBuffer = new Int16Array(frameSamples).buffer;
+        ws.send(JSON.stringify({
+            realtimeInput: {
+                mediaChunks: [{
+                    mimeType: 'audio/pcm',
+                    data: ab2b64(frameBuffer)
+                }]
+            }
+        }));
+    }
 }
 
 function stopSR() {
@@ -1338,8 +1343,7 @@ UI.callBtn.addEventListener('click', async () => {
                     src.connect(audioWorkletNode);
                     audioWorkletNode.port.onmessage = e => {
                         if (ws && ws.readyState === WebSocket.OPEN && isCallActive) {
-                            const pcmBuffer = resampleTo16kPCM(e.data, inSampleRate);
-                            ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{mimeType:'audio/pcm',data:ab2b64(pcmBuffer)}]}}));
+                            processAndSendMicAudio(e.data, inSampleRate);
                         }
                     };
                     workletSuccess = true;
@@ -1354,8 +1358,7 @@ UI.callBtn.addEventListener('click', async () => {
                     scriptNode.onaudioprocess = e => {
                         if (!isCallActive || !ws || ws.readyState !== WebSocket.OPEN) return;
                         const input = e.inputBuffer.getChannelData(0);
-                        const pcmBuffer = resampleTo16kPCM(input, inSampleRate);
-                        ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{mimeType:'audio/pcm',data:ab2b64(pcmBuffer)}]}}));
+                        processAndSendMicAudio(input, inSampleRate);
                     };
                     audioWorkletNode = scriptNode;
                 }
