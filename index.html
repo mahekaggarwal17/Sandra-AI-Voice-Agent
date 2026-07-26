@@ -1182,6 +1182,33 @@ document.addEventListener('click', async () => {
     }
 }, { passive: true });
 
+function resampleTo16kPCM(float32Array, inputSampleRate) {
+    const targetSampleRate = 16000;
+    if (inputSampleRate === targetSampleRate) {
+        const pcm16 = new Int16Array(float32Array.length);
+        for (let i = 0; i < float32Array.length; i++) {
+            const s = Math.max(-1, Math.min(1, float32Array[i]));
+            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        return pcm16.buffer;
+    }
+    
+    const ratio = inputSampleRate / targetSampleRate;
+    const newLength = Math.floor(float32Array.length / ratio);
+    const pcm16 = new Int16Array(newLength);
+    
+    for (let i = 0; i < newLength; i++) {
+        const originIndex = i * ratio;
+        const index1 = Math.floor(originIndex);
+        const index2 = Math.min(index1 + 1, float32Array.length - 1);
+        const weight = originIndex - index1;
+        const interpolated = float32Array[index1] * (1 - weight) + float32Array[index2] * weight;
+        const s = Math.max(-1, Math.min(1, interpolated));
+        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return pcm16.buffer;
+}
+
 let pcmAccumulator = [];
 
 function processAndSendMicAudio(float32Data, inputSampleRate) {
