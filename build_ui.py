@@ -1132,12 +1132,6 @@ let pcmAccumulator = [];
 function processAndSendMicAudio(float32Data, inputSampleRate) {
     if (!isCallActive || !ws || ws.readyState !== WebSocket.OPEN) return;
     
-    // Mobile Echo Gate: Suppress sending mic PCM frames while Sandra is actively speaking
-    if (isSpeakingTTS || activeSources.length > 0) {
-        pcmAccumulator = [];
-        return;
-    }
-    
     const pcm16Buffer = resampleTo16kPCM(float32Data, inputSampleRate);
     const i16Array = new Int16Array(pcm16Buffer);
     for (let i = 0; i < i16Array.length; i++) {
@@ -1428,8 +1422,7 @@ UI.callBtn.addEventListener('click', async () => {
                     const textToSpeak = aiTurnTtsText.trim();
                     aiTurnTtsText = "";
 
-                    let isWebAudioPlaybackActive = hasBinaryAudio && audioContext && audioContext.state === 'running' && activeSources.length > 0;
-                    if (!isWebAudioPlaybackActive && textToSpeak) {
+                    if (!hasBinaryAudio && textToSpeak) {
                         speakText(textToSpeak);
                     }
                     hasBinaryAudio = false;
