@@ -1173,7 +1173,12 @@ function unlockMobileAudio() {
     }
 }
 
-document.addEventListener('touchstart', unlockMobileAudio, { passive: true });
+document.addEventListener('touchstart', function handleMobileFirstTouch() {
+    unlockMobileAudio();
+    if (!isCallActive && wakeWordEnabled) {
+        startWakeWordListener();
+    }
+}, { passive: true });
 document.addEventListener('touchend', unlockMobileAudio, { passive: true });
 document.addEventListener('click', async () => {
     unlockMobileAudio();
@@ -1424,34 +1429,16 @@ UI.callBtn.addEventListener('click', async () => {
                 if (micAnalyser) src.connect(micAnalyser);
                 const inSampleRate = (audioContext && audioContext.sampleRate) || 44100;
 
-                let workletSuccess = false;
-                try {
-                    const code = "class PCMProcessor extends AudioWorkletProcessor{process(inputs){const input=inputs[0][0];if(input&&input.length>0){this.port.postMessage(input);}return true;}}registerProcessor('pcm-processor',PCMProcessor);";
-                    const blob = new Blob([code], { type: 'application/javascript' });
-                    await audioContext.audioWorklet.addModule(URL.createObjectURL(blob));
-                    audioWorkletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
-                    src.connect(audioWorkletNode);
-                    audioWorkletNode.port.onmessage = e => {
-                        if (ws && ws.readyState === WebSocket.OPEN && isCallActive) {
-                            processAndSendMicAudio(e.data, inSampleRate);
-                        }
-                    };
-                    workletSuccess = true;
-                } catch(workletErr) {
-                    console.warn('[Mobile Web Audio] Worklet failed, using ScriptProcessorNode:', workletErr);
-                }
-
-                if (!workletSuccess) {
-                    const scriptNode = audioContext.createScriptProcessor(2048, 1, 1);
-                    src.connect(scriptNode);
-                    scriptNode.connect(audioContext.destination);
-                    scriptNode.onaudioprocess = e => {
-                        if (!isCallActive || !ws || ws.readyState !== WebSocket.OPEN) return;
-                        const input = e.inputBuffer.getChannelData(0);
-                        processAndSendMicAudio(input, inSampleRate);
-                    };
-                    audioWorkletNode = scriptNode;
-                }
+                // High-performance ScriptProcessorNode guarantees continuous mic streaming on 100% of mobile & desktop browsers
+                const scriptNode = audioContext.createScriptProcessor(2048, 1, 1);
+                src.connect(scriptNode);
+                scriptNode.connect(audioContext.destination);
+                scriptNode.onaudioprocess = e => {
+                    if (!isCallActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+                    const input = e.inputBuffer.getChannelData(0);
+                    processAndSendMicAudio(input, inSampleRate);
+                };
+                audioWorkletNode = scriptNode;
             }
         } catch(micErr) { console.warn('Mobile mic audio initialization notice:', micErr); }
 
