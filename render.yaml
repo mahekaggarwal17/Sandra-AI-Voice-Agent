@@ -5,11 +5,5 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python api_server.py
     envVars:
-      - key: PORT
-        value: 10000
-      - key: FLASK_SECRET_KEY
-        generateValue: true
-      - key: HOST_EMAIL
-        value: mahek.aggarwal17@gmail.com
-      - key: GOOGLE_API_REDIRECT_URI
-        value: https://sandra-ai-voice-agent.onrender.com/auth/callback
+      - key: GEMINI_API_KEY
+        sync: false
