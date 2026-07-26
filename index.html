@@ -933,10 +933,65 @@ async function requestMicPermission() {
     return false;
 }
 
+let vadStream = null;
+let vadInterval = null;
+
+async function startVADWakeWord() {
+    if (isCallActive || !wakeWordEnabled || vadStream) return;
+    try {
+        setWakeBadgeStatus('active', 'Wake Word: Active (Voice VAD)');
+        vadStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const ctx = getOrCreateAudioContext();
+        if (!ctx) return;
+        const src = ctx.createMediaStreamSource(vadStream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        src.connect(analyser);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        
+        let voiceStreak = 0;
+        vadInterval = setInterval(() => {
+            if (isCallActive) {
+                stopVADWakeWord();
+                return;
+            }
+            analyser.getByteFrequencyData(data);
+            let sum = 0;
+            for (let i = 0; i < data.length; i++) sum += data[i];
+            const avg = sum / data.length;
+            
+            if (avg > 25) {
+                voiceStreak++;
+                if (voiceStreak >= 3) { // ~300ms continuous voice energy
+                    console.log('[VAD WAKE WORD TRIGGERED] Speech detected!');
+                    setWakeBadgeStatus('triggered', 'Wake Word: Triggered!');
+                    stopVADWakeWord();
+                    if (!isCallActive) {
+                        if (currentUser) UI.callBtn.click();
+                        else addMsg('Wake word detected! Please log in to start session.', 'system');
+                    }
+                }
+            } else {
+                voiceStreak = Math.max(0, voiceStreak - 1);
+            }
+        }, 100);
+    } catch(err) {
+        console.warn('[VAD WakeWord Notice]', err);
+    }
+}
+
+function stopVADWakeWord() {
+    if (vadInterval) { clearInterval(vadInterval); vadInterval = null; }
+    if (vadStream) {
+        try { vadStream.getTracks().forEach(t => t.stop()); } catch(e){}
+        vadStream = null;
+    }
+}
+
 async function startWakeWordListener() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
-        setWakeBadgeStatus('off', 'Wake Word: Unsupported');
+        startVADWakeWord();
         return;
     }
     if (!wakeWordEnabled) {
@@ -1523,24 +1578,42 @@ function playB64(b64) {
     if (audioContext.state === 'suspended') {
         try { audioContext.resume(); } catch(e){}
     }
-    const bin = atob(b64), buf = new ArrayBuffer(bin.length), view = new DataView(buf);
-    for (let i = 0; i < bin.length; i++) view.setUint8(i, bin.charCodeAt(i));
-    const i16 = new Int16Array(buf), ab = audioContext.createBuffer(1, i16.length, 24000);
-    const ch = ab.getChannelData(0);
-    for (let i = 0; i < i16.length; i++) ch[i] = i16[i] / 32768;
-    const src = audioContext.createBufferSource();
-    src.buffer = ab;
-    src.connect(aiAnalyser);
-    aiAnalyser.connect(audioContext.destination);
-    
-    const now = audioContext.currentTime;
-    if (nextPlayTime < now || nextPlayTime > now + 0.12) {
-        nextPlayTime = now + 0.005; // 5ms zero-latency initial playback queue
+    try {
+        const bin = atob(b64);
+        const sampleCount = Math.floor(bin.length / 2);
+        if (sampleCount <= 0) return;
+        
+        const ab = audioContext.createBuffer(1, sampleCount, 24000);
+        const ch = ab.getChannelData(0);
+        
+        for (let i = 0; i < sampleCount; i++) {
+            const b1 = bin.charCodeAt(i * 2);
+            const b2 = bin.charCodeAt(i * 2 + 1);
+            let val = (b2 << 8) | b1;
+            if (val & 0x8000) val |= ~0xFFFF;
+            ch[i] = val / 32768.0;
+        }
+
+        const src = audioContext.createBufferSource();
+        src.buffer = ab;
+        if (aiAnalyser) {
+            src.connect(aiAnalyser);
+            aiAnalyser.connect(audioContext.destination);
+        } else {
+            src.connect(audioContext.destination);
+        }
+        
+        const now = audioContext.currentTime;
+        if (nextPlayTime < now || nextPlayTime > now + 0.12) {
+            nextPlayTime = now + 0.005; // 5ms zero-latency initial playback queue
+        }
+        src.start(nextPlayTime);
+        nextPlayTime += ab.duration;
+        activeSources.push(src);
+        src.onended = () => { activeSources = activeSources.filter(s => s !== src); };
+    } catch(err) {
+        console.error('[playB64 Safe Decode Error]', err);
     }
-    src.start(nextPlayTime);
-    nextPlayTime += ab.duration;
-    activeSources.push(src);
-    src.onended = () => { activeSources = activeSources.filter(s => s !== src); };
 }
 
 UI.sendTextBtn.addEventListener('click', () => {
