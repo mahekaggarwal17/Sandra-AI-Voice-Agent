@@ -428,8 +428,10 @@
             .modal { padding: 1.75rem 1.25rem; width: 94vw; border-radius: 20px; }
             .modal-input { padding: 0.8rem 0.95rem; font-size: 0.88rem; min-height: 44px; }
             .modal-submit { padding: 0.85rem; min-height: 46px; }
-            .drawer { width: 100vw; right: 0; height: 85vh; border-radius: 20px 20px 0 0; }
-            .history-drawer { width: 100vw; right: 0; height: 85vh; }
+            .drawer { width: 100vw; right: -100vw; top: auto; bottom: 0; height: 80vh; border-radius: 20px 20px 0 0; }
+            .drawer.open { right: 0; }
+            .history-drawer { width: 100vw; right: -100vw; top: auto; bottom: 0; height: 80vh; border-radius: 20px 20px 0 0; }
+            .history-drawer.open { right: 0; }
         }
 
         @media (max-width: 480px) {
@@ -1049,14 +1051,10 @@ function getOrCreateAudioContext() {
     if (!AudioCtxClass) return null;
     if (!audioContext || audioContext.state === 'closed') {
         try {
-            audioContext = new AudioCtxClass({ sampleRate: 16000 });
+            audioContext = new AudioCtxClass();
         } catch (e) {
-            try {
-                audioContext = new AudioCtxClass();
-            } catch(e2) {
-                console.error('[AudioContext Fail]', e2);
-                return null;
-            }
+            console.error('[AudioContext Fail]', e);
+            return null;
         }
     }
     if (audioContext && audioContext.state === 'suspended') {
@@ -1065,9 +1063,26 @@ function getOrCreateAudioContext() {
     return audioContext;
 }
 
+let mobileAudioUnlocked = false;
 function unlockMobileAudio() {
-    getOrCreateAudioContext();
+    const ctx = getOrCreateAudioContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+    }
+    if (!mobileAudioUnlocked && ctx.state === 'running') {
+        try {
+            const buffer = ctx.createBuffer(1, 1, 22050);
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            source.start(0);
+            mobileAudioUnlocked = true;
+            console.log('[Mobile Web Audio] Speaker unlocked on touch gesture.');
+        } catch (e) {}
+    }
 }
+
 document.addEventListener('touchstart', unlockMobileAudio, { passive: true });
 document.addEventListener('touchend', unlockMobileAudio, { passive: true });
 document.addEventListener('click', async () => {
@@ -1076,6 +1091,33 @@ document.addEventListener('click', async () => {
         startWakeWordListener();
     }
 }, { passive: true });
+
+function resampleTo16kPCM(float32Array, inputSampleRate) {
+    const targetSampleRate = 16000;
+    if (inputSampleRate === targetSampleRate) {
+        const pcm16 = new Int16Array(float32Array.length);
+        for (let i = 0; i < float32Array.length; i++) {
+            const s = Math.max(-1, Math.min(1, float32Array[i]));
+            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        return pcm16.buffer;
+    }
+    
+    const ratio = inputSampleRate / targetSampleRate;
+    const newLength = Math.floor(float32Array.length / ratio);
+    const pcm16 = new Int16Array(newLength);
+    
+    for (let i = 0; i < newLength; i++) {
+        const originIndex = i * ratio;
+        const index1 = Math.floor(originIndex);
+        const index2 = Math.min(index1 + 1, float32Array.length - 1);
+        const weight = originIndex - index1;
+        const interpolated = float32Array[index1] * (1 - weight) + float32Array[index2] * weight;
+        const s = Math.max(-1, Math.min(1, interpolated));
+        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return pcm16.buffer;
+}
 
 function stopSR() {
     if (recognition) {
@@ -1186,6 +1228,7 @@ UI.callBtn.addEventListener('click', async () => {
 
     // Safely get or create AudioContext for mobile browsers
     audioContext = getOrCreateAudioContext();
+    unlockMobileAudio();
 
     sessionId = 'session_'+Date.now();
     UI.callBtn.classList.add('active');
@@ -1242,36 +1285,35 @@ UI.callBtn.addEventListener('click', async () => {
             if (audioContext && mediaStream) {
                 const src = audioContext.createMediaStreamSource(mediaStream);
                 if (micAnalyser) src.connect(micAnalyser);
+                const inSampleRate = audioContext.sampleRate || 44100;
 
                 let workletSuccess = false;
                 try {
-                    const code = "class PCMProcessor extends AudioWorkletProcessor{process(inputs){const ch=inputs[0][0];if(ch){const i16=new Int16Array(ch.length);for(let i=0;i<ch.length;i++)i16[i]=Math.max(-32768,Math.min(32767,ch[i]*32768));this.port.postMessage(i16.buffer,[i16.buffer]);}return true;}}registerProcessor('pcm-processor',PCMProcessor);";
+                    const code = "class PCMProcessor extends AudioWorkletProcessor{process(inputs){const input=inputs[0][0];if(input&&input.length>0){this.port.postMessage(input);}return true;}}registerProcessor('pcm-processor',PCMProcessor);";
                     const blob = new Blob([code], { type: 'application/javascript' });
                     await audioContext.audioWorklet.addModule(URL.createObjectURL(blob));
                     audioWorkletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
                     src.connect(audioWorkletNode);
                     audioWorkletNode.port.onmessage = e => {
-                        if (ws && ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{mimeType:'audio/pcm',data:ab2b64(e.data)}]}}));
+                        if (ws && ws.readyState === WebSocket.OPEN && isCallActive) {
+                            const pcmBuffer = resampleTo16kPCM(e.data, inSampleRate);
+                            ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{mimeType:'audio/pcm',data:ab2b64(pcmBuffer)}]}}));
                         }
                     };
                     workletSuccess = true;
                 } catch(workletErr) {
-                    console.warn('[Mobile PCM Fallback] Worklet failed, using ScriptProcessorNode:', workletErr);
+                    console.warn('[Mobile Web Audio] Worklet failed, using ScriptProcessorNode:', workletErr);
                 }
 
                 if (!workletSuccess) {
-                    const scriptNode = audioContext.createScriptProcessor(512, 1, 1);
+                    const scriptNode = audioContext.createScriptProcessor(2048, 1, 1);
                     src.connect(scriptNode);
                     scriptNode.connect(audioContext.destination);
                     scriptNode.onaudioprocess = e => {
                         if (!isCallActive || !ws || ws.readyState !== WebSocket.OPEN) return;
                         const input = e.inputBuffer.getChannelData(0);
-                        const i16 = new Int16Array(input.length);
-                        for (let i = 0; i < input.length; i++) {
-                            i16[i] = Math.max(-32768, Math.min(32767, input[i] * 32768));
-                        }
-                        ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{mimeType:'audio/pcm',data:ab2b64(i16.buffer)}]}}));
+                        const pcmBuffer = resampleTo16kPCM(input, inSampleRate);
+                        ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{mimeType:'audio/pcm',data:ab2b64(pcmBuffer)}]}}));
                     };
                     audioWorkletNode = scriptNode;
                 }
