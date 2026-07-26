@@ -467,7 +467,6 @@
             <input type="email" id="authEmail" class="modal-input" placeholder="Email" required>
             <input type="password" id="authPassword" class="modal-input" placeholder="Password" required>
             <input type="tel" id="authPhone" class="modal-input hidden" placeholder="Phone (e.g. +15550199)">
-            <input type="password" id="geminiKey" class="modal-input" placeholder="API Key (NVIDIA nvapi-... or Gemini AIza...)" required>
             <button type="submit" id="authActionBtn" class="modal-submit">Log In</button>
         </form>
     </div>
@@ -619,9 +618,7 @@ function switchTab(t) {
 async function handleAuthSubmit(e) {
     e.preventDefault();
     const email=UI.authEmail.value.trim(), password=UI.authPassword.value.trim();
-    const phone=UI.authPhone.value.trim(), apiKey=UI.geminiKey.value.trim();
-    if (!apiKey) return alert('Gemini API Key required.');
-    localStorage.setItem('gemini_api_key', apiKey);
+    const phone=UI.authPhone.value.trim();
     const ep = activeTab==='login' ? '/api/login' : '/api/register';
     const body = activeTab==='login' ? {email,password} : {email,password,phone_number:phone};
     try {
@@ -1125,9 +1122,8 @@ UI.callBtn.addEventListener('click', async () => {
         UI.callBtnText.textContent = 'End Session';
         updateStatus('Listening...', 'live');
         addMsg('Connecting to voice agent...', 'system');
-        const key = localStorage.getItem('gemini_api_key');
         const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        ws = new WebSocket(wsProto + '//' + window.location.host + '/ws?user_id=' + currentUser.id + '&key=' + key);
+        ws = new WebSocket(wsProto + '//' + window.location.host + '/ws?user_id=' + currentUser.id);
         let pingTimer = null;
         ws.onopen = async () => {
             pingTimer = setInterval(() => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ping:true})); }, 15000);
