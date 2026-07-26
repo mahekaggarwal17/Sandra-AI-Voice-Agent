@@ -1015,9 +1015,8 @@ class FlaskSockWsAdapter:
 @sock.route('/ws')
 def unified_ws_endpoint(ws):
     user_id_val = request.args.get('user_id', '1')
-    api_key_val = request.args.get('key')
-    if not api_key_val or api_key_val in ["null", "undefined"]:
-        api_key_val = os.getenv("NVIDIA_API_KEY") or os.getenv("GEMINI_API_KEY")
+    if not api_key_val or str(api_key_val).strip().lower() in ["null", "undefined", "none", "", "false"]:
+        api_key_val = os.getenv("GEMINI_API_KEY") or os.getenv("NVIDIA_API_KEY")
     
     try:
         user_id = int(user_id_val)
