@@ -393,6 +393,54 @@
         .net-alert { position:fixed;top:80px;left:50%;transform:translateX(-50%);background:rgba(239,68,68,0.92);color:#fff;padding:0.75rem 1.5rem;border-radius:12px;display:flex;align-items:center;gap:1rem;font-size:0.85rem;font-weight:500;z-index:600;box-shadow:0 10px 30px rgba(239,68,68,0.3);backdrop-filter:blur(10px); }
         .net-btn { background:#fff;color:var(--red);border:none;padding:0.4rem 0.9rem;border-radius:7px;font-size:0.82rem;font-weight:600;cursor:pointer; }
         .hidden { display:none!important; }
+
+        /* MOBILE RESPONSIVE ENHANCEMENTS */
+        @media (max-width: 768px) {
+            html, body { overflow-y: auto; height: 100%; }
+            .nav {
+                padding: 0 0.85rem; height: 56px;
+                grid-template-columns: auto 1fr;
+                gap: 0.5rem;
+            }
+            .status-pill { display: none; }
+            .nav-logo-name { display: none; }
+            .nav-right { gap: 0.4rem; }
+            .sync-badge { padding: 0.3rem 0.65rem; font-size: 0.72rem; }
+            .voice-select { padding: 0.35rem 0.5rem; font-size: 0.75rem; max-width: 95px; }
+            .nav-btn { padding: 0.35rem 0.65rem; font-size: 0.75rem; }
+            
+            .stage {
+                min-height: 100dvh; height: auto;
+                padding: 72px 1rem 2rem;
+                justify-content: flex-start;
+            }
+            .agent-label { margin-bottom: 1.25rem; font-size: 0.65rem; }
+            .orb-wrap { width: 210px; height: 210px; margin-bottom: 1.25rem; }
+            #orbCanvas { width: 210px; height: 210px; }
+            .orb-title { font-size: 1.65rem; margin-bottom: 0.35rem; }
+            .orb-sub { font-size: 0.82rem; margin-bottom: 1.5rem; }
+            .call-btn {
+                padding: 0.85rem 2rem; font-size: 0.9rem;
+                min-height: 48px; width: min(280px, 85vw);
+                justify-content: center;
+            }
+            .caption-wrap { width: 92vw; margin-top: 1.25rem; }
+            .modal { padding: 1.75rem 1.25rem; width: 94vw; border-radius: 20px; }
+            .modal-input { padding: 0.8rem 0.95rem; font-size: 0.88rem; min-height: 44px; }
+            .modal-submit { padding: 0.85rem; min-height: 46px; }
+            .drawer { width: 100vw; right: 0; height: 85vh; border-radius: 20px 20px 0 0; }
+            .history-drawer { width: 100vw; right: 0; height: 85vh; }
+        }
+
+        @media (max-width: 480px) {
+            .nav { padding: 0 0.65rem; }
+            .sync-badge span { font-size: 0.68rem; }
+            .voice-select { font-size: 0.7rem; max-width: 80px; }
+            .orb-wrap { width: 180px; height: 180px; }
+            #orbCanvas { width: 180px; height: 180px; }
+            .orb-title { font-size: 1.45rem; }
+            .orb-sub { font-size: 0.78rem; }
+        }
     </style>
 </head>
 <body>
@@ -946,7 +994,15 @@ async function toggleWakeWordManual() {
     }
 }
 
+function unlockMobileAudio() {
+    if (audioContext && audioContext.state === 'suspended') {
+        try { audioContext.resume(); } catch(e){}
+    }
+}
+document.addEventListener('touchstart', unlockMobileAudio, { passive: true });
+document.addEventListener('touchend', unlockMobileAudio, { passive: true });
 document.addEventListener('click', async () => {
+    unlockMobileAudio();
     if (!wakeWordRecognition && !isCallActive && wakeWordEnabled) {
         startWakeWordListener();
     }
@@ -1052,6 +1108,16 @@ function speakText(rawText, onEnd) {
 UI.callBtn.addEventListener('click', async () => {
     stopWakeWordListener();
     if (!currentUser) return alert('Please log in first.');
+
+    // Synchronous AudioContext initialization & resume for Mobile (iOS Safari & Android Chrome)
+    const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+    if (!audioContext || audioContext.state === 'closed') {
+        audioContext = new AudioCtxClass({ sampleRate: 16000 });
+    }
+    if (audioContext && audioContext.state === 'suspended') {
+        try { await audioContext.resume(); } catch(e){}
+    }
+
     isCallActive = !isCallActive;
     if (isCallActive) {
         sessionId = 'session_'+Date.now();
@@ -1084,20 +1150,50 @@ UI.callBtn.addEventListener('click', async () => {
                 ]}]
             }}));
             try {
-                audioContext = new AudioContext({sampleRate:16000});
-                micAnalyser = audioContext.createAnalyser(); micAnalyser.fftSize = 256;
-                aiAnalyser = audioContext.createAnalyser(); aiAnalyser.fftSize = 256;
-                mediaStream = await navigator.mediaDevices.getUserMedia({audio:{deviceId:UI.audioSource.value?{exact:UI.audioSource.value}:undefined,sampleRate:16000,channelCount:1}});
+                if (!micAnalyser) micAnalyser = audioContext.createAnalyser(); micAnalyser.fftSize = 256;
+                if (!aiAnalyser) aiAnalyser = audioContext.createAnalyser(); aiAnalyser.fftSize = 256;
+                
+                let micConstraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } };
+                if (UI.audioSource.value && UI.audioSource.value !== 'Loading...' && UI.audioSource.value !== 'default') {
+                    micConstraints.audio.deviceId = { exact: UI.audioSource.value };
+                }
+                mediaStream = await navigator.mediaDevices.getUserMedia(micConstraints);
                 const src = audioContext.createMediaStreamSource(mediaStream);
                 src.connect(micAnalyser);
-                await audioContext.audioWorklet.addModule(URL.createObjectURL(new Blob(["class PCMProcessor extends AudioWorkletProcessor{process(inputs){const ch=inputs[0][0];if(ch){const i16=new Int16Array(ch.length);for(let i=0;i<ch.length;i++)i16[i]=Math.max(-32768,Math.min(32767,ch[i]*32768));this.port.postMessage(i16.buffer,[i16.buffer]);}return true;}}registerProcessor('pcm-processor',PCMProcessor);"],{type:'application/javascript'})));
-                audioWorkletNode = new AudioWorkletNode(audioContext,'pcm-processor');
-                src.connect(audioWorkletNode);
-                audioWorkletNode.port.onmessage = e => {
-                    if (ws && ws.readyState===WebSocket.OPEN)
-                        ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{mimeType:'audio/pcm',data:ab2b64(e.data)}]}}));
-                };
-            } catch(micErr) { console.warn('Audio worklet init non-fatal warning:', micErr); }
+
+                let workletSuccess = false;
+                try {
+                    const code = "class PCMProcessor extends AudioWorkletProcessor{process(inputs){const ch=inputs[0][0];if(ch){const i16=new Int16Array(ch.length);for(let i=0;i<ch.length;i++)i16[i]=Math.max(-32768,Math.min(32767,ch[i]*32768));this.port.postMessage(i16.buffer,[i16.buffer]);}return true;}}registerProcessor('pcm-processor',PCMProcessor);";
+                    const blob = new Blob([code], { type: 'application/javascript' });
+                    await audioContext.audioWorklet.addModule(URL.createObjectURL(blob));
+                    audioWorkletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
+                    src.connect(audioWorkletNode);
+                    audioWorkletNode.port.onmessage = e => {
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{mimeType:'audio/pcm',data:ab2b64(e.data)}]}}));
+                        }
+                    };
+                    workletSuccess = true;
+                } catch(workletErr) {
+                    console.warn('[Mobile PCM Fallback] Worklet failed, using ScriptProcessorNode:', workletErr);
+                }
+
+                if (!workletSuccess) {
+                    const scriptNode = audioContext.createScriptProcessor(2048, 1, 1);
+                    src.connect(scriptNode);
+                    scriptNode.connect(audioContext.destination);
+                    scriptNode.onaudioprocess = e => {
+                        if (!isCallActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+                        const input = e.inputBuffer.getChannelData(0);
+                        const i16 = new Int16Array(input.length);
+                        for (let i = 0; i < input.length; i++) {
+                            i16[i] = Math.max(-32768, Math.min(32767, input[i] * 32768));
+                        }
+                        ws.send(JSON.stringify({realtimeInput:{mediaChunks:[{mimeType:'audio/pcm',data:ab2b64(i16.buffer)}]}}));
+                    };
+                    audioWorkletNode = scriptNode;
+                }
+            } catch(micErr) { console.warn('Mobile mic audio initialization notice:', micErr); }
 
             UI.chatInput.removeAttribute('disabled'); UI.sendTextBtn.removeAttribute('disabled');
             UI.chatInput.placeholder = 'Type a message...';
@@ -1239,6 +1335,9 @@ function ab2b64(buf) { let b='',u=new Uint8Array(buf); for(let i=0;i<u.byteLengt
 
 function playB64(b64) {
     if (!audioContext) return;
+    if (audioContext.state === 'suspended') {
+        try { audioContext.resume(); } catch(e){}
+    }
     const bin=atob(b64),buf=new ArrayBuffer(bin.length),view=new DataView(buf);
     for(let i=0;i<bin.length;i++) view.setUint8(i,bin.charCodeAt(i));
     const i16=new Int16Array(buf),ab=audioContext.createBuffer(1,i16.length,24000);
