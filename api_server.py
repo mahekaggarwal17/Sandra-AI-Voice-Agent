@@ -1084,10 +1084,41 @@ def start_websocket_proxy():
             import time
             time.sleep(2)
 
+def generate_self_signed_cert(cert_file='cert.pem', key_file='key.pem'):
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        return cert_file, key_file
+    try:
+        from cryptography import x509
+        from cryptography.x509.oid import NameOID
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        import datetime
+        
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, u'localhost')])
+        cert = x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key()).serial_number(x509.random_serial_number()).not_valid_before(datetime.datetime.utcnow()).not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=365)).sign(key, hashes.SHA256())
+        with open(key_file, 'wb') as f:
+            f.write(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption()))
+        with open(cert_file, 'wb') as f:
+            f.write(cert.public_bytes(serialization.Encoding.PEM))
+        print("[SSL] Self-signed SSL certificate generated successfully.", flush=True)
+        return cert_file, key_file
+    except Exception as e:
+        print(f"[SSL Warning] Certificate generation notice: {e}", flush=True)
+        return None, None
+
 if __name__ == '__main__':
     proxy_thread = threading.Thread(target=start_websocket_proxy, daemon=True)
     proxy_thread.start()
     
     port = int(os.getenv("PORT", 5000))
-    print(f"[HTTP] Unified HTTP server running on http://0.0.0.0:{port}", flush=True)
-    app.run(host="0.0.0.0", port=port)
+    cert_f, key_f = generate_self_signed_cert()
+    ssl_context = (cert_f, key_f) if cert_f and key_f else None
+    
+    if ssl_context:
+        print(f"[HTTPS] Unified HTTPS server running on https://0.0.0.0:{port}", flush=True)
+        print(f"[HTTPS MOBILE ACCESS] Open https://<YOUR_IP_ADDRESS>:{port} on your mobile phone for full mic access!", flush=True)
+        app.run(host="0.0.0.0", port=port, ssl_context=ssl_context)
+    else:
+        print(f"[HTTP] Unified HTTP server running on http://0.0.0.0:{port}", flush=True)
+        app.run(host="0.0.0.0", port=port)

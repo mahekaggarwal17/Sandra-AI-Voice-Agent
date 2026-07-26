@@ -1368,8 +1368,13 @@ UI.callBtn.addEventListener('click', async () => {
                 micConstraints.audio.deviceId = { exact: UI.audioSource.value };
             }
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                const httpsUrl = 'https://' + window.location.hostname + (window.location.port ? ':' + window.location.port : '') + window.location.pathname;
+                if (confirm("Microphone access is blocked on HTTP by Mobile Operating Systems.\n\nWould you like to switch to HTTPS now for full mobile microphone access?")) {
+                    window.location.href = httpsUrl;
+                    return;
+                }
                 alert("Microphone access is blocked on mobile HTTP.\n\nMobile browsers require HTTPS or localhost to enable microphone recording.\n\nPlease open this site over HTTPS or access via localhost.");
-                addMsg("Microphone blocked: Mobile browsers require HTTPS or localhost for mic access.", "system");
+                addMsg("Microphone blocked: Mobile browsers require HTTPS. Switch URL to https://", "system");
                 return;
             }
             try {
