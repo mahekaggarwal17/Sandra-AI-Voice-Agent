@@ -1342,16 +1342,44 @@ UI.callBtn.addEventListener('click', async () => {
         return;
     }
 
-    // Safely get or create AudioContext for mobile browsers
+    // Safely get or create AudioContext for mobile browsers synchronously on touch
     audioContext = getOrCreateAudioContext();
     unlockMobileAudio();
 
     sessionId = 'session_'+Date.now();
     UI.callBtn.classList.add('active');
     UI.callBtnText.textContent = 'End Session';
-    updateStatus('Listening...', 'live');
+    updateStatus('Connecting...', 'live');
     addMsg('Connecting to voice agent...', 'system');
     
+    // Acquire microphone stream immediately on user tap gesture
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        const httpsUrl = 'https://' + window.location.hostname + (window.location.port ? ':' + window.location.port : '') + window.location.pathname;
+        if (confirm("Microphone access is blocked on HTTP by Mobile Operating Systems.\n\nWould you like to switch to HTTPS now for full mobile microphone access?")) {
+            window.location.href = httpsUrl;
+            return;
+        }
+        alert("Microphone access is blocked on mobile HTTP.\n\nMobile browsers require HTTPS or localhost to enable microphone recording.\n\nPlease open this site over HTTPS or access via localhost.");
+        addMsg("Microphone blocked: Mobile browsers require HTTPS. Switch URL to https://", "system");
+        return;
+    }
+    
+    let micConstraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } };
+    if (UI.audioSource.value && UI.audioSource.value.length > 5 && UI.audioSource.value !== 'Loading...' && UI.audioSource.value !== 'default') {
+        micConstraints.audio.deviceId = { exact: UI.audioSource.value };
+    }
+    try {
+        mediaStream = await navigator.mediaDevices.getUserMedia(micConstraints);
+    } catch(gErr) {
+        try {
+            mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch(finalMicErr) {
+            alert("Microphone permission was denied. Please allow microphone access in browser settings.");
+            cleanUp();
+            return;
+        }
+    }
+
     const userKey = (UI.geminiKey && UI.geminiKey.value.trim()) || localStorage.getItem('gemini_api_key') || '';
     const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = wsProto + '//' + window.location.host + '/ws?user_id=' + currentUser.id + (userKey ? '&key=' + encodeURIComponent(userKey) : '');
@@ -1365,11 +1393,11 @@ UI.callBtn.addEventListener('click', async () => {
 
     ws.onopen = async () => {
         pingTimer = setInterval(() => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ping:true})); }, 15000);
-        let mem = 'No past memory found.';
-        try { const r = await fetch('/api/get_memory?user_id='+currentUser.id); const d = await r.json(); mem = d.context; }
-        catch(e) { console.error(e); }
+        
         const dt = new Date().toString(), tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const sp = 'You are Sandra, a premium AI voice assistant.\nToday: '+dt+'. Timezone: '+tz+'.\n'+mem+'\nTools: update_user_memory, send_email, add_todo, check_availability, book_meeting (with Google Meet video link), web_search.\nRule: Do NOT append [END_CALL] while answering questions or performing tasks. ONLY append [END_CALL] if the user explicitly orders you to "hang up" or "end call".';
+        const sp = 'You are Sandra, a premium AI voice assistant.\nToday: '+dt+'. Timezone: '+tz+'.\nTools: update_user_memory, send_email, add_todo, check_availability, book_meeting (with Google Meet video link), web_search.\nRule: Do NOT append [END_CALL] while answering questions or performing tasks. ONLY append [END_CALL] if the user explicitly orders you to "hang up" or "end call".';
+        
+        // Send setup payload IMMEDIATELY on WebSocket connection opening
         ws.send(JSON.stringify({setup:{
             model:'models/gemini-2.0-flash-exp',
             generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:UI.voiceConfig.value}}},thinkingConfig:{thinkingLevel:'MINIMAL'}},
@@ -1383,37 +1411,18 @@ UI.callBtn.addEventListener('click', async () => {
                 {name:'web_search',description:'Web search.',parameters:{type:'OBJECT',properties:{query:{type:'STRING'}},required:['query']}}
             ]}]
         }}));
+
         try {
             audioContext = getOrCreateAudioContext();
             if (audioContext) {
                 if (!micAnalyser) micAnalyser = audioContext.createAnalyser(); micAnalyser.fftSize = 256;
                 if (!aiAnalyser) aiAnalyser = audioContext.createAnalyser(); aiAnalyser.fftSize = 256;
             }
-            
-            let micConstraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } };
-            if (UI.audioSource.value && UI.audioSource.value.length > 5 && UI.audioSource.value !== 'Loading...' && UI.audioSource.value !== 'default') {
-                micConstraints.audio.deviceId = { exact: UI.audioSource.value };
-            }
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                const httpsUrl = 'https://' + window.location.hostname + (window.location.port ? ':' + window.location.port : '') + window.location.pathname;
-                if (confirm("Microphone access is blocked on HTTP by Mobile Operating Systems.\n\nWould you like to switch to HTTPS now for full mobile microphone access?")) {
-                    window.location.href = httpsUrl;
-                    return;
-                }
-                alert("Microphone access is blocked on mobile HTTP.\n\nMobile browsers require HTTPS or localhost to enable microphone recording.\n\nPlease open this site over HTTPS or access via localhost.");
-                addMsg("Microphone blocked: Mobile browsers require HTTPS. Switch URL to https://", "system");
-                return;
-            }
-            try {
-                mediaStream = await navigator.mediaDevices.getUserMedia(micConstraints);
-            } catch(gErr) {
-                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            }
 
             if (audioContext && mediaStream) {
                 const src = audioContext.createMediaStreamSource(mediaStream);
                 if (micAnalyser) src.connect(micAnalyser);
-                const inSampleRate = audioContext.sampleRate || 44100;
+                const inSampleRate = (audioContext && audioContext.sampleRate) || 44100;
 
                 let workletSuccess = false;
                 try {
