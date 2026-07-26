@@ -69,6 +69,32 @@
         }
         .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 8px #4ade80; flex-shrink: 0; }
         .sync-badge.unsynced .sync-dot { background: #facc15; box-shadow: none; }
+        .wake-badge {
+            background: rgba(124,109,250,0.12); border: 1px solid rgba(124,109,250,0.35);
+            color: #a78bfa; font-size: 0.78rem; font-weight: 600;
+            box-shadow: 0 0 12px rgba(124,109,250,0.15); cursor: pointer; transition: all 0.2s ease;
+        }
+        .wake-badge.off {
+            background: rgba(107,114,128,0.12); border-color: rgba(107,114,128,0.3);
+            color: #9ca3af; box-shadow: none;
+        }
+        .wake-badge.off .wake-dot { background: #6b7280; box-shadow: none; animation: none; }
+        .wake-badge.active {
+            background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.3);
+            color: #4ade80; box-shadow: 0 0 12px rgba(34,197,94,0.2);
+        }
+        .wake-badge.active .wake-dot { background: #4ade80; box-shadow: 0 0 8px #4ade80; animation: blink 1.6s infinite; }
+        .wake-badge.triggered {
+            background: rgba(168,85,247,0.2); border-color: rgba(168,85,247,0.5);
+            color: #c084fc; box-shadow: 0 0 16px rgba(168,85,247,0.3);
+        }
+        .wake-badge.triggered .wake-dot { background: #c084fc; box-shadow: 0 0 10px #c084fc; }
+        .wake-badge.denied {
+            background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.3);
+            color: #f87171; box-shadow: none;
+        }
+        .wake-badge.denied .wake-dot { background: #ef4444; box-shadow: none; animation: none; }
+        .wake-dot { width: 7px; height: 7px; border-radius: 50%; background: #a78bfa; box-shadow: 0 0 8px #a78bfa; flex-shrink: 0; }
         .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
         .dot.live { background: var(--green); box-shadow: 0 0 10px var(--green-glow); animation: blink 1.6s infinite; }
         .dot.speaking { background: var(--accent); box-shadow: 0 0 10px var(--accent-glow); animation: blink 1.2s infinite; }
@@ -410,6 +436,10 @@
         <span id="statusText">Disconnected</span>
     </div>
     <div class="nav-right">
+        <div class="sync-badge wake-badge active" id="wakeWordBadge" onclick="toggleWakeWordManual()" title="Click to enable or toggle Wake Word listener">
+            <div class="sync-dot wake-dot" id="wakeWordDot"></div>
+            <span id="wakeWordBadgeText">Wake Word: Active</span>
+        </div>
         <div class="sync-badge" id="googleSyncBadge" onclick="triggerGoogleAuth()">
             <div class="sync-dot"></div>
             <span id="syncBadgeText">Calendar Synced</span>
@@ -794,11 +824,37 @@ function startSR() {
 
 let wakeWordRecognition = null;
 let wakeWordRestartTimer = null;
+let wakeWordEnabled = true;
 
-function startWakeWordListener() {
+function setWakeBadgeStatus(status, text) {
+    const badge = document.getElementById('wakeWordBadge');
+    const badgeText = document.getElementById('wakeWordBadgeText');
+    if (!badge || !badgeText) return;
+    badge.className = 'sync-badge wake-badge ' + status;
+    badgeText.textContent = text;
+}
+
+async function requestMicPermission() {
+    try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach(t => t.stop());
+            return true;
+        }
+    } catch(err) {
+        console.warn('[WakeWord] Mic permission request failed:', err);
+    }
+    return false;
+}
+
+async function startWakeWordListener() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
-        console.warn('[WakeWord] SpeechRecognition is not supported in this browser.');
+        setWakeBadgeStatus('off', 'Wake Word: Unsupported');
+        return;
+    }
+    if (!wakeWordEnabled) {
+        setWakeBadgeStatus('off', 'Wake Word: Off');
         return;
     }
     if (wakeWordRecognition || isCallActive) return;
@@ -816,20 +872,28 @@ function startWakeWordListener() {
 
         rec.onstart = () => {
             console.log('[WakeWord] Listening active ("Hey Sandra")...');
+            setWakeBadgeStatus('active', 'Wake Word: Active ("Hey Sandra")');
         };
 
         rec.onresult = e => {
             if (isCallActive || isSpeakingTTS) return;
-            let text = '';
-            for (let i = e.resultIndex; i < e.results.length; i++) {
-                text += e.results[i][0].transcript;
+            let fullText = '';
+            for (let i = 0; i < e.results.length; i++) {
+                fullText += ' ' + e.results[i][0].transcript;
             }
-            const lower = text.toLowerCase();
-            if (/(hello|hey|hi|ok|okay)?\s*(sandra|sondra|saundra|shandra|chandra)/i.test(lower)) {
-                console.log('[WAKE WORD DETECTED] Transcript:', text);
+            const lower = fullText.toLowerCase();
+            console.log('[WakeWord STT]:', lower);
+
+            if (/(hello|hey|hi|ok|okay)?\s*(sandra|sondra|saundra|shandra|chandra|center|santa)/i.test(lower)) {
+                console.log('[WAKE WORD TRIGGERED] Matched:', lower);
+                setWakeBadgeStatus('triggered', 'Wake Word: Triggered!');
                 stopWakeWordListener();
-                if (!isCallActive && currentUser) {
-                    UI.callBtn.click();
+                if (!isCallActive) {
+                    if (currentUser) {
+                        UI.callBtn.click();
+                    } else {
+                        addMsg('Wake word detected! Please log in to start session.', 'system');
+                    }
                 }
             }
         };
@@ -837,7 +901,7 @@ function startWakeWordListener() {
         rec.onerror = e => {
             console.warn('[WakeWord Error]', e.error);
             if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-                console.error('[WakeWord] Mic permission denied or unsupported.');
+                setWakeBadgeStatus('denied', 'Wake Word: Enable Mic (Click)');
                 wakeWordRecognition = null;
                 return;
             }
@@ -845,12 +909,12 @@ function startWakeWordListener() {
 
         rec.onend = () => {
             wakeWordRecognition = null;
-            if (!isCallActive) {
+            if (!isCallActive && wakeWordEnabled) {
                 wakeWordRestartTimer = setTimeout(() => {
-                    if (!isCallActive && !wakeWordRecognition) {
+                    if (!isCallActive && !wakeWordRecognition && wakeWordEnabled) {
                         startWakeWordListener();
                     }
-                }, 500);
+                }, 400);
             }
         };
 
@@ -875,7 +939,32 @@ function stopWakeWordListener() {
         } catch(e) {}
         wakeWordRecognition = null;
     }
+    if (!isCallActive && wakeWordEnabled) {
+        setWakeBadgeStatus('off', 'Wake Word: Idle');
+    }
 }
+
+async function toggleWakeWordManual() {
+    if (!wakeWordEnabled) {
+        wakeWordEnabled = true;
+        await requestMicPermission();
+        startWakeWordListener();
+    } else if (wakeWordRecognition) {
+        wakeWordEnabled = false;
+        stopWakeWordListener();
+        setWakeBadgeStatus('off', 'Wake Word: Off (Click to Enable)');
+    } else {
+        wakeWordEnabled = true;
+        await requestMicPermission();
+        startWakeWordListener();
+    }
+}
+
+document.addEventListener('click', async () => {
+    if (!wakeWordRecognition && !isCallActive && wakeWordEnabled) {
+        startWakeWordListener();
+    }
+}, { passive: true });
 
 function stopSR() {
     if (recognition) {
