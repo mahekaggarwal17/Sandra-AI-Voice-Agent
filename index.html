@@ -1220,9 +1220,9 @@ function processAndSendMicAudio(float32Data, inputSampleRate) {
         pcmAccumulator.push(i16Array[i]);
     }
     
-    // Accumulate 1600 Int16 samples (100ms at 16kHz = 3200 bytes) per WebSocket packet
-    while (pcmAccumulator.length >= 1600) {
-        const frameSamples = pcmAccumulator.splice(0, 1600);
+    // Ultra Low-Latency 40ms frames (640 Int16 samples = 1280 bytes at 16kHz)
+    while (pcmAccumulator.length >= 640) {
+        const frameSamples = pcmAccumulator.splice(0, 640);
         const frameBuffer = new Int16Array(frameSamples).buffer;
         ws.send(JSON.stringify({
             realtimeInput: {
@@ -1479,7 +1479,7 @@ UI.callBtn.addEventListener('click', async () => {
                 }
                 if (c.outputTranscription&&c.outputTranscription.text) {
                     let rawText = c.outputTranscription.text;
-                    let shouldEndCall = /\[END_CALL\]/i.test(rawText);
+                    let shouldEndCall = /\[END_CALL\]/i.test(rawText) || /have a (great|good|nice|wonderful) day/i.test(rawText) || /goodbye/i.test(rawText) || /bye for now/i.test(rawText);
                     let chunkText = rawText.replace(/\[END_CALL\]/gi, '');
                     
                     if (chunkText) {
@@ -1489,8 +1489,8 @@ UI.callBtn.addEventListener('click', async () => {
                     }
                     
                     if (shouldEndCall) {
-                        // Allow TTS enough time to say goodbye before stopping the call
-                        let ttsWaitTime = Math.max(3000, chunkText.length * 75);
+                        // Allow audio output to finish speaking before hanging up cleanly
+                        let ttsWaitTime = Math.max(2500, chunkText.length * 60);
                         setTimeout(() => stopCall(), ttsWaitTime);
                     }
                 }
