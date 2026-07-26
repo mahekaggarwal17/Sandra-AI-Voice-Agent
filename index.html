@@ -1261,7 +1261,7 @@ UI.callBtn.addEventListener('click', async () => {
                 }
 
                 if (!workletSuccess) {
-                    const scriptNode = audioContext.createScriptProcessor(2048, 1, 1);
+                    const scriptNode = audioContext.createScriptProcessor(512, 1, 1);
                     src.connect(scriptNode);
                     scriptNode.connect(audioContext.destination);
                     scriptNode.onaudioprocess = e => {
@@ -1413,21 +1413,39 @@ async function summarize() {
     } catch(e) { addMsg('Summary failed.','system'); }
 }
 
-function ab2b64(buf) { let b='',u=new Uint8Array(buf); for(let i=0;i<u.byteLength;i++) b+=String.fromCharCode(u[i]); return window.btoa(b); }
+function ab2b64(buf) {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i += 1024) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 1024, len)));
+    }
+    return window.btoa(binary);
+}
 
 function playB64(b64) {
     if (!audioContext) return;
     if (audioContext.state === 'suspended') {
         try { audioContext.resume(); } catch(e){}
     }
-    const bin=atob(b64),buf=new ArrayBuffer(bin.length),view=new DataView(buf);
-    for(let i=0;i<bin.length;i++) view.setUint8(i,bin.charCodeAt(i));
-    const i16=new Int16Array(buf),ab=audioContext.createBuffer(1,i16.length,24000);
-    const ch=ab.getChannelData(0); for(let i=0;i<i16.length;i++) ch[i]=i16[i]/32768;
-    const src=audioContext.createBufferSource(); src.buffer=ab;
-    src.connect(aiAnalyser); aiAnalyser.connect(audioContext.destination);
-    const st=Math.max(audioContext.currentTime,nextPlayTime); src.start(st); nextPlayTime=st+ab.duration;
-    activeSources.push(src); src.onended=()=>{ activeSources=activeSources.filter(s=>s!==src); };
+    const bin = atob(b64), buf = new ArrayBuffer(bin.length), view = new DataView(buf);
+    for (let i = 0; i < bin.length; i++) view.setUint8(i, bin.charCodeAt(i));
+    const i16 = new Int16Array(buf), ab = audioContext.createBuffer(1, i16.length, 24000);
+    const ch = ab.getChannelData(0);
+    for (let i = 0; i < i16.length; i++) ch[i] = i16[i] / 32768;
+    const src = audioContext.createBufferSource();
+    src.buffer = ab;
+    src.connect(aiAnalyser);
+    aiAnalyser.connect(audioContext.destination);
+    
+    const now = audioContext.currentTime;
+    if (nextPlayTime < now) {
+        nextPlayTime = now + 0.015; // 15ms buffer to eliminate audio queue lag
+    }
+    src.start(nextPlayTime);
+    nextPlayTime += ab.duration;
+    activeSources.push(src);
+    src.onended = () => { activeSources = activeSources.filter(s => s !== src); };
 }
 
 UI.sendTextBtn.addEventListener('click', () => {
