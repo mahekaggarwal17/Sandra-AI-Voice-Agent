@@ -879,7 +879,7 @@ async def proxy_handler(websocket, path=None):
         return
         
     user_id = int(user_id_list[0])
-    api_key = (api_key_list[0] if (api_key_list and api_key_list[0] and api_key_list[0] != "null" and api_key_list[0] != "undefined") else None) or os.getenv("NVIDIA_API_KEY") or os.getenv("GEMINI_API_KEY") or "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"
+    api_key = (api_key_list[0] if (api_key_list and api_key_list[0] and api_key_list[0] != "null" and api_key_list[0] != "undefined") else None) or os.getenv("NVIDIA_API_KEY") or os.getenv("GEMINI_API_KEY")
     
     if not api_key:
         await websocket.close(1008, "Missing API Key")
