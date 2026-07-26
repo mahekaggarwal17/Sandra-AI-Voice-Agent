@@ -700,7 +700,7 @@ function loadUserProfile() {
     addMsg('Session ready. Press Start to connect.', 'system');
     fetchHistory();
     checkGoogleSyncStatus();
-    startWakeWordListener();
+    setWakeBadgeStatus('off', 'Wake Word: Tap Screen to Activate');
 }
 
 function triggerGoogleAuth() {
