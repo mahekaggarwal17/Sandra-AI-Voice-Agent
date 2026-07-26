@@ -464,10 +464,11 @@
             <button type="button" id="tabRegister" class="modal-tab" onclick="switchTab('register')">Register</button>
         </div>
         <form id="authForm" onsubmit="handleAuthSubmit(event)">
-            <input type="email" id="authEmail" class="modal-input" placeholder="Email" required>
+            <input type="email" id="authEmail" class="modal-input" placeholder="Email (e.g. user@gmail.com)" required>
             <input type="password" id="authPassword" class="modal-input" placeholder="Password" required>
-            <input type="tel" id="authPhone" class="modal-input hidden" placeholder="Phone (e.g. +15550199)">
+            <input type="tel" id="authPhone" class="modal-input" style="display:none;" placeholder="Mobile Phone (e.g. +15550199)">
             <button type="submit" id="authActionBtn" class="modal-submit">Log In</button>
+            <button type="button" onclick="quickGuestLogin()" class="modal-tab" style="width:100%;margin-top:0.75rem;padding:0.65rem;border:1px solid var(--border);border-radius:12px;color:var(--text);font-weight:500;cursor:pointer;">⚡ Quick Guest Sign In</button>
         </form>
     </div>
 </div>
@@ -614,15 +615,25 @@ function switchTab(t) {
     if (tabL) tabL.classList.toggle('active', t === 'login');
     if (tabR) tabR.classList.toggle('active', t === 'register');
     if (UI.authActionBtn) UI.authActionBtn.textContent = t === 'login' ? 'Log In' : 'Create Account';
-    if (UI.authPhone) {
+    const phoneInput = document.getElementById('authPhone');
+    if (phoneInput) {
         if (t === 'login') {
-            UI.authPhone.classList.add('hidden');
+            phoneInput.style.display = 'none';
+            phoneInput.classList.add('hidden');
         } else {
-            UI.authPhone.classList.remove('hidden');
+            phoneInput.style.display = 'block';
+            phoneInput.classList.remove('hidden');
         }
     }
 }
 window.switchTab = switchTab;
+
+async function quickGuestLogin() {
+    if (UI.authEmail) UI.authEmail.value = 'guest@sandra.ai';
+    if (UI.authPassword) UI.authPassword.value = 'guest123';
+    await handleAuthSubmit();
+}
+window.quickGuestLogin = quickGuestLogin;
 
 async function handleAuthSubmit(e) {
     if (e) e.preventDefault();
