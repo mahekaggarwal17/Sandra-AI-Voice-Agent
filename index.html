@@ -460,8 +460,8 @@
             <span class="modal-logo-name">Sandra AI</span>
         </div>
         <div class="modal-tabs">
-            <button id="tabLogin" class="modal-tab active" onclick="switchTab('login')">Log In</button>
-            <button id="tabRegister" class="modal-tab" onclick="switchTab('register')">Register</button>
+            <button type="button" id="tabLogin" class="modal-tab active" onclick="switchTab('login')">Log In</button>
+            <button type="button" id="tabRegister" class="modal-tab" onclick="switchTab('register')">Register</button>
         </div>
         <form id="authForm" onsubmit="handleAuthSubmit(event)">
             <input type="email" id="authEmail" class="modal-input" placeholder="Email" required>
@@ -609,28 +609,70 @@ let captionFadeTimer=null, captionCurrentRole=null, captionCurrentText='';
 
 function switchTab(t) {
     activeTab = t;
-    document.getElementById('tabLogin').classList.toggle('active', t==='login');
-    document.getElementById('tabRegister').classList.toggle('active', t==='register');
-    UI.authActionBtn.textContent = t==='login' ? 'Log In' : 'Create Account';
-    UI.authPhone.classList.toggle('hidden', t==='login');
+    const tabL = document.getElementById('tabLogin');
+    const tabR = document.getElementById('tabRegister');
+    if (tabL) tabL.classList.toggle('active', t === 'login');
+    if (tabR) tabR.classList.toggle('active', t === 'register');
+    if (UI.authActionBtn) UI.authActionBtn.textContent = t === 'login' ? 'Log In' : 'Create Account';
+    if (UI.authPhone) {
+        if (t === 'login') {
+            UI.authPhone.classList.add('hidden');
+        } else {
+            UI.authPhone.classList.remove('hidden');
+        }
+    }
 }
+window.switchTab = switchTab;
 
 async function handleAuthSubmit(e) {
-    e.preventDefault();
-    const email=UI.authEmail.value.trim(), password=UI.authPassword.value.trim();
-    const phone=UI.authPhone.value.trim();
-    const ep = activeTab==='login' ? '/api/login' : '/api/register';
-    const body = activeTab==='login' ? {email,password} : {email,password,phone_number:phone};
+    if (e) e.preventDefault();
+    const email = UI.authEmail ? UI.authEmail.value.trim() : '';
+    const password = UI.authPassword ? UI.authPassword.value.trim() : '';
+    const phone = UI.authPhone ? UI.authPhone.value.trim() : '';
+
+    if (!email || !password) {
+        return alert('Please enter both email and password.');
+    }
+
+    const ep = activeTab === 'login' ? '/api/login' : '/api/register';
+    const body = activeTab === 'login' ? { email, password } : { email, password, phone_number: phone };
+
     try {
-        const res = await fetch(ep, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        if (UI.authActionBtn) {
+            UI.authActionBtn.disabled = true;
+            UI.authActionBtn.textContent = 'Please wait...';
+        }
+
+        const res = await fetch(ep, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
         const data = await res.json();
-        if (data.error) return alert(data.error);
+
+        if (UI.authActionBtn) {
+            UI.authActionBtn.disabled = false;
+            UI.authActionBtn.textContent = activeTab === 'login' ? 'Log In' : 'Create Account';
+        }
+
+        if (!res.ok || data.error) {
+            return alert(data.error || 'Authentication failed. Check your credentials.');
+        }
+
         currentUser = data.user;
         localStorage.setItem('user', JSON.stringify(currentUser));
-        UI.authModal.classList.add('hidden');
+        if (UI.authModal) UI.authModal.classList.add('hidden');
         loadUserProfile();
-    } catch(err) { alert('Auth failed: '+err); }
+    } catch(err) {
+        if (UI.authActionBtn) {
+            UI.authActionBtn.disabled = false;
+            UI.authActionBtn.textContent = activeTab === 'login' ? 'Log In' : 'Create Account';
+        }
+        alert('Network or server error: ' + (err.message || err));
+    }
 }
+window.handleAuthSubmit = handleAuthSubmit;
 
 function loadUserProfile() {
     if (!currentUser) return;
