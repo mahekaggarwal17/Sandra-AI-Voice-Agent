@@ -121,8 +121,28 @@ def create_user(email: str, password: str, phone_number: str = None) -> int:
     finally:
         conn.close()
 
+def upsert_user(email: str, password: str, phone_number: str = None):
+    init_db()
+    email = (email or '').strip().lower()
+    pw_hash = hash_password(password or 'password123')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, phone_number FROM users WHERE email = ?', (email,))
+    row = cursor.fetchone()
+    if row:
+        user_id = row['id']
+        eff_phone = phone_number or row['phone_number']
+        cursor.execute('UPDATE users SET password_hash = ?, phone_number = ? WHERE id = ?', (pw_hash, eff_phone, user_id))
+    else:
+        cursor.execute('INSERT INTO users (email, password_hash, phone_number) VALUES (?, ?, ?)', (email, pw_hash, phone_number))
+        user_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return get_user_by_id(user_id)
+
 def authenticate_user(email: str, password: str):
     init_db()
+    email = (email or '').strip().lower()
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT id, email, password_hash, phone_number FROM users WHERE email = ?', (email,))

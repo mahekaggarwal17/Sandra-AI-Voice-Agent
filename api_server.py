@@ -54,16 +54,12 @@ def register():
         return jsonify({"error": "Email and password are required"}), 400
         
     try:
-        user_id = database.create_user(email, password, phone_number)
-        user = database.get_user_by_id(user_id)
+        user = database.upsert_user(email, password, phone_number)
         return jsonify({
-            "message": "User registered successfully",
-            "user": user or {"id": user_id, "email": email, "phone_number": phone_number}
+            "message": "Account ready and logged in!",
+            "user": user
         })
     except Exception as e:
-        user = database.authenticate_user(email, password)
-        if user:
-            return jsonify({"message": "Logged in successfully", "user": user})
         return jsonify({"error": str(e)}), 400
 
 @app.route('/api/login', methods=['POST'])
@@ -75,22 +71,14 @@ def login():
     if not email or not password:
         return jsonify({"error": "Email and password are required"}), 400
         
-    user = database.authenticate_user(email, password)
-    if user:
+    try:
+        user = database.upsert_user(email, password)
         return jsonify({
             "message": "Logged in successfully",
             "user": user
         })
-        
-    try:
-        user_id = database.create_user(email, password)
-        user = database.get_user_by_id(user_id)
-        if user:
-            return jsonify({"message": "Account created and logged in!", "user": user})
-    except Exception:
-        pass
-
-    return jsonify({"error": "Invalid email or password"}), 401
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 # --- GOOGLE OAUTH FLOW APIs ---
 
